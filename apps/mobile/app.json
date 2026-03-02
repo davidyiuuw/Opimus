@@ -19,8 +19,9 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0F4C81"
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.opimus.app"
     },
@@ -41,7 +42,7 @@
     ],
     "scheme": "opimus",
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": false
     }
   }
 }
