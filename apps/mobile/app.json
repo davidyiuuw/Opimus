@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "Opimus",
+    "slug": "opimus",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F4C81"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.opimus.app",
+      "usesAppleSignIn": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F4C81"
+      },
+      "package": "com.opimus.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Opimus to access your photos to upload vaccination documents."
+        }
+      ],
+      "expo-apple-authentication"
+    ],
+    "scheme": "opimus",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
