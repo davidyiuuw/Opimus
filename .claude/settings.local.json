@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install:*)",
+      "Bash(node:*)",
+      "Bash(npm:*)",
+      "Bash(npm install:*)",
+      "Bash(corepack enable:*)",
+      "Bash(corepack prepare:*)",
+      "Bash(curl:*)",
+      "Bash(sh -)",
+      "Bash(~/.local/bin/pnpm --version)",
+      "Bash(~/.pnpm/pnpm:*)",
+      "Bash(npx pnpm:*)",
+      "Bash(~/.local/bin/pnpm install:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
