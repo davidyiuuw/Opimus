@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Stack, Redirect } from 'expo-router'
+import { Stack, useRouter, useSegments } from 'expo-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { View, ActivityIndicator } from 'react-native'
 import { supabase } from '../lib/supabase'
@@ -14,15 +14,16 @@ const queryClient = new QueryClient({
 
 function RootLayoutInner() {
   const { session, isLoading, setSession, setLoading } = useAuthStore()
+  const segments = useSegments()
+  const router = useRouter()
 
+  // Subscribe to Supabase auth changes
   useEffect(() => {
-    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setLoading(false)
     })
 
-    // Listen for auth changes (sign in, sign out, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
       setLoading(false)
@@ -30,6 +31,19 @@ function RootLayoutInner() {
 
     return () => subscription.unsubscribe()
   }, [setSession, setLoading])
+
+  // Redirect based on auth state once loading is done
+  useEffect(() => {
+    if (isLoading) return
+
+    const inAuthGroup = segments[0] === '(auth)'
+
+    if (!session && !inAuthGroup) {
+      router.replace('/(auth)/sign-in')
+    } else if (session && inAuthGroup) {
+      router.replace('/(tabs)')
+    }
+  }, [session, isLoading, segments, router])
 
   if (isLoading) {
     return (
@@ -39,13 +53,10 @@ function RootLayoutInner() {
     )
   }
 
-  if (!session) {
-    return <Redirect href="/(auth)/sign-in" />
-  }
-
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="(auth)" />
       <Stack.Screen name="results/[country]" options={{ headerShown: true, title: '' }} />
       <Stack.Screen name="passport/upload" options={{ headerShown: true, title: 'Upload Proof' }} />
     </Stack>
