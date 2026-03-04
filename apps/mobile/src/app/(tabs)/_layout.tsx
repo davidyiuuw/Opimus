@@ -18,6 +18,10 @@ export default function TabsLayout() {
         options={{ title: 'Search', tabBarLabel: 'Search' }}
       />
       <Tabs.Screen
+        name="checklist"
+        options={{ title: 'My Checklist', tabBarLabel: 'Checklist' }}
+      />
+      <Tabs.Screen
         name="passport"
         options={{ title: 'My Vaccine Passport', tabBarLabel: 'Passport' }}
       />

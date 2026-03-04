@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native'
+import { View, Text, ScrollView, TouchableOpacity, TouchableWithoutFeedback, KeyboardAvoidingView, Keyboard, Platform, StyleSheet, Alert } from 'react-native'
 import { Link } from 'expo-router'
 import * as AppleAuthentication from 'expo-apple-authentication'
 import { supabase } from '../../lib/supabase'
@@ -53,63 +53,75 @@ export default function SignInScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <View style={styles.header}>
-        <Text style={styles.title}>Opimus</Text>
-        <Text style={styles.subtitle}>Your travel vaccine companion</Text>
-      </View>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.header}>
+            <Text style={styles.title}>Opimus</Text>
+            <Text style={styles.subtitle}>Your travel vaccine companion</Text>
+          </View>
 
-      <View style={styles.form}>
-        <Input
-          label="Email"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          autoComplete="email"
-          error={errors.email}
-          placeholder="you@example.com"
-        />
-        <Input
-          label="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoComplete="password"
-          error={errors.password}
-          placeholder="••••••••"
-        />
+          <View style={styles.form}>
+            <Input
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoComplete="email"
+              error={errors.email}
+              placeholder="you@example.com"
+            />
+            <Input
+              label="Password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoComplete="password"
+              error={errors.password}
+              placeholder="••••••••"
+            />
 
-        <Button label="Sign In" onPress={handleSignIn} loading={loading} />
+            <Button label="Sign In" onPress={handleSignIn} loading={loading} />
 
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or</Text>
-          <View style={styles.dividerLine} />
-        </View>
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
 
-        <AppleAuthentication.AppleAuthenticationButton
-          buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-          cornerRadius={10}
-          style={styles.appleButton}
-          onPress={handleAppleSignIn}
-        />
-      </View>
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={10}
+              style={styles.appleButton}
+              onPress={handleAppleSignIn}
+            />
+          </View>
 
-      <TouchableOpacity style={styles.footer}>
-        <Link href="/(auth)/sign-up">
-          <Text style={styles.footerText}>
-            Don't have an account? <Text style={styles.footerLink}>Sign Up</Text>
-          </Text>
-        </Link>
-      </TouchableOpacity>
-    </ScrollView>
+          <TouchableOpacity style={styles.footer}>
+            <Link href="/(auth)/sign-up">
+              <Text style={styles.footerText}>
+                Don't have an account? <Text style={styles.footerLink}>Sign Up</Text>
+              </Text>
+            </Link>
+          </TouchableOpacity>
+        </ScrollView>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: spacing.lg, backgroundColor: colors.background },
+  flex: { flex: 1, backgroundColor: colors.background },
+  container: { flexGrow: 1, padding: spacing.lg, paddingBottom: spacing.xxl },
   header: { alignItems: 'center', paddingVertical: spacing.xxl },
   title: { ...typography.h1, color: colors.primary },
   subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.xs },

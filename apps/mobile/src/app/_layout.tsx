@@ -57,7 +57,7 @@ function RootLayoutInner() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="(auth)" />
-      <Stack.Screen name="results/[country]" options={{ headerShown: true, title: '' }} />
+      <Stack.Screen name="results/[country]" options={{ headerShown: true, title: '', headerBackTitle: 'Search' }} />
       <Stack.Screen name="passport/upload" options={{ headerShown: true, title: 'Upload Proof' }} />
     </Stack>
   )

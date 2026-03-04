@@ -29,10 +29,19 @@ export interface VaccineRecommendation {
   last_synced_at: string
 }
 
+// One vaccine grouped across all sources (CDC, country gov, WHO, etc.)
+export interface VaccineGroup {
+  vaccine_id: number
+  vaccine?: Vaccine
+  primaryLevel: RecommendationLevel  // most restrictive level across all sources
+  sources: VaccineRecommendation[]   // one entry per source
+  hasDiscrepancy: boolean            // true when sources disagree on level
+}
+
 export interface GroupedRecommendations {
-  required: VaccineRecommendation[]
-  recommended: VaccineRecommendation[]
-  routine: VaccineRecommendation[]
+  required: VaccineGroup[]
+  recommended: VaccineGroup[]
+  routine: VaccineGroup[]
 }
 
 export type DocumentType =
@@ -60,4 +69,14 @@ export interface UserVaccine {
   notes: string | null
   created_at: string
   documents?: VaccineDocument[]
+}
+
+export interface ChecklistItem {
+  id: number
+  user_id: string
+  country_id: number
+  vaccine_id: number
+  created_at: string
+  vaccine?: Vaccine
+  country?: { id: number; code: string; name: string }
 }

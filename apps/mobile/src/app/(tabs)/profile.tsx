@@ -1,5 +1,6 @@
+import { SafeAreaView } from 'react-native-safe-area-context'
 import React, { useEffect, useState } from 'react'
-import { View, Text, StyleSheet, SafeAreaView, Alert, ActivityIndicator } from 'react-native'
+import { View, Text, StyleSheet,  Alert, ActivityIndicator } from 'react-native'
 import { supabase } from '../../lib/supabase'
 import { UserProfile } from '@opimus/types'
 import { Button } from '../../components/ui/Button'

@@ -1,35 +1,62 @@
+import { SafeAreaView } from 'react-native-safe-area-context'
 import React from 'react'
 import {
   View, Text, FlatList, TouchableOpacity,
-  StyleSheet, SafeAreaView, ActivityIndicator,
+  StyleSheet, ActivityIndicator,
 } from 'react-native'
 import { router } from 'expo-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { UserVaccine } from '@opimus/types'
 import { supabase } from '../../lib/supabase'
-import { api } from '../../lib/api'
 import { colors } from '../../theme/colors'
 import { typography } from '../../theme/typography'
 import { borderRadius, spacing } from '../../theme/spacing'
+
+async function fetchPassport(): Promise<UserVaccine[]> {
+  const { data, error } = await supabase
+    .from('user_vaccines')
+    .select(`
+      id, vaccine_id, administered_at, notes, created_at,
+      vaccines ( id, name, manufacturer, doses, notes,
+        diseases ( id, slug, name )
+      ),
+      vaccine_documents ( id, doc_type, file_url, file_name, uploaded_at )
+    `)
+    .order('created_at', { ascending: false })
+
+  if (error) throw new Error(error.message)
+
+  return (data ?? []).map((entry: any) => ({
+    ...entry,
+    vaccine: entry.vaccines
+      ? { ...entry.vaccines, disease: entry.vaccines.diseases ?? undefined }
+      : undefined,
+    documents: entry.vaccine_documents ?? [],
+  }))
+}
+
+async function removeVaccine(id: number): Promise<void> {
+  const { error } = await supabase
+    .from('user_vaccines')
+    .delete()
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+}
 
 export default function PassportScreen() {
   const queryClient = useQueryClient()
 
   const { data: entries = [], isLoading } = useQuery<UserVaccine[]>({
     queryKey: ['passport'],
-    queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return []
-      const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000'}/user/vaccines`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      })
-      return res.json()
-    },
+    queryFn: fetchPassport,
   })
 
   const removeMutation = useMutation({
-    mutationFn: (id: number) => api.delete(`/user/vaccines/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['passport'] }),
+    mutationFn: removeVaccine,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['passport'] })
+      queryClient.invalidateQueries({ queryKey: ['passportIds'] })
+    },
   })
 
   if (isLoading) {
@@ -47,7 +74,8 @@ export default function PassportScreen() {
           <Text style={styles.emptyIcon}>💉</Text>
           <Text style={styles.emptyTitle}>No vaccines logged yet</Text>
           <Text style={styles.emptyBody}>
-            Search for a destination to see what vaccines you need, then add them to your passport.
+            Search for a destination to see what vaccines are needed, then tap
+            "I have this vaccine" to add them here.
           </Text>
         </View>
       </SafeAreaView>
@@ -63,11 +91,15 @@ export default function PassportScreen() {
         renderItem={({ item }) => (
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <View>
+              <View style={styles.cardInfo}>
                 <Text style={styles.vaccineName}>{item.vaccine?.name ?? 'Vaccine'}</Text>
-                <Text style={styles.diseaseName}>{item.vaccine?.disease?.name}</Text>
+                {item.vaccine?.disease && (
+                  <Text style={styles.diseaseName}>{item.vaccine.disease.name}</Text>
+                )}
               </View>
-              <Text style={styles.checkmark}>✅</Text>
+              <View style={styles.coveredBadge}>
+                <Text style={styles.coveredText}>✓ Have it</Text>
+              </View>
             </View>
 
             {item.administered_at && (
@@ -78,9 +110,13 @@ export default function PassportScreen() {
 
             <View style={styles.docRow}>
               {item.documents && item.documents.length > 0 ? (
-                <Text style={styles.docAttached}>📄 {item.documents.length} document(s) uploaded</Text>
+                <Text style={styles.docAttached}>
+                  📄 {item.documents.length} document(s) uploaded
+                </Text>
               ) : (
-                <TouchableOpacity onPress={() => router.push(`/passport/upload?vaccineId=${item.id}`)}>
+                <TouchableOpacity
+                  onPress={() => router.push(`/passport/upload?vaccineId=${item.id}`)}
+                >
                   <Text style={styles.uploadLink}>Upload proof →</Text>
                 </TouchableOpacity>
               )}
@@ -108,17 +144,44 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  cardInfo: { flex: 1 },
   vaccineName: { ...typography.h3, color: colors.textPrimary },
-  diseaseName: { ...typography.bodySmall, color: colors.textSecondary },
-  checkmark: { fontSize: 20 },
+  diseaseName: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
+  coveredBadge: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    marginLeft: spacing.sm,
+  },
+  coveredText: { ...typography.bodySmall, color: '#2E7D32', fontWeight: '700' },
   date: { ...typography.bodySmall, color: colors.textSecondary },
-  docRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  docRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   docAttached: { ...typography.bodySmall, color: colors.success },
   uploadLink: { ...typography.bodySmall, color: colors.primary, fontWeight: '600' },
   remove: { fontSize: 18 },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
+  empty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
   emptyIcon: { fontSize: 48 },
   emptyTitle: { ...typography.h2, color: colors.textPrimary, textAlign: 'center' },
-  emptyBody: { ...typography.body, color: colors.textSecondary, textAlign: 'center', lineHeight: 24 },
+  emptyBody: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
 })

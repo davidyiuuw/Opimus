@@ -1,5 +1,6 @@
+import { SafeAreaView } from 'react-native-safe-area-context'
 import React, { useState } from 'react'
-import { View, Text, StyleSheet, SafeAreaView, Alert, Image } from 'react-native'
+import { View, Text, StyleSheet,  Alert, Image } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
 import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '../../lib/supabase'
