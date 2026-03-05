@@ -12,6 +12,7 @@ interface VaccineResultCardProps {
   isOnChecklist: boolean
   onAddToPassport: () => void
   onAddToChecklist: () => void
+  onUndo: () => void
   onReport: () => void
 }
 
@@ -29,18 +30,38 @@ const LEVEL_STYLE: Record<RecommendationLevel, { bg: string; text: string; label
   not_recommended: { bg: '#F5F5F5', text: '#757575', label: 'Not recommended' },
 }
 
+// Strip the level word from the start of notes to avoid "Required Required if..."
+// Only applies to required/recommended — "Routine vaccines should..." reads fine as-is.
+function stripLevelPrefix(notes: string, label: string): string {
+  const trimmed = notes.trimStart()
+  if (trimmed.toLowerCase().startsWith(label.toLowerCase())) {
+    return trimmed.slice(label.length).trimStart()
+  }
+  return trimmed
+}
+
 export function VaccineResultCard({
-  group, isInPassport, isOnChecklist, onAddToPassport, onAddToChecklist, onReport,
+  group, isInPassport, isOnChecklist,
+  onAddToPassport, onAddToChecklist, onUndo, onReport,
 }: VaccineResultCardProps) {
   const vaccine = group.vaccine
   const disease = vaccine?.disease
   const levelStyle = LEVEL_STYLE[group.primaryLevel]
+  const rawNotes = group.sources.find((s) => s.notes)?.notes ?? null
+  const primaryNotes = rawNotes && (group.primaryLevel === 'required' || group.primaryLevel === 'recommended')
+    ? stripLevelPrefix(rawNotes, levelStyle.label)
+    : rawNotes
 
-  // Notes from the first source that has them (usually CDC)
-  const primaryNotes = group.sources.find((s) => s.notes)?.notes
+  const cardStyle = isInPassport
+    ? styles.cardCovered
+    : isOnChecklist
+      ? styles.cardPending
+      : null
+
+  const showUndo = isInPassport || isOnChecklist
 
   return (
-    <View style={[styles.card, isInPassport && styles.cardCovered]}>
+    <View style={[styles.card, cardStyle]}>
 
       {/* ── Header ── */}
       <View style={styles.headerRow}>
@@ -51,6 +72,11 @@ export function VaccineResultCard({
         {isInPassport && (
           <View style={styles.coveredBadge}>
             <Text style={styles.coveredBadgeText}>✓ Up-to-date</Text>
+          </View>
+        )}
+        {isOnChecklist && !isInPassport && (
+          <View style={styles.pendingBadge}>
+            <Text style={styles.pendingBadgeText}>● Pending</Text>
           </View>
         )}
       </View>
@@ -75,17 +101,13 @@ export function VaccineResultCard({
         })}
       </View>
 
-      {/* ── Level badge + notes inline ── */}
-      <View style={styles.levelNotesRow}>
-        <View style={[styles.levelBadge, { backgroundColor: levelStyle.bg }]}>
-          <Text style={[styles.levelBadgeText, { color: levelStyle.text }]}>
-            {levelStyle.label}
-          </Text>
-        </View>
-        {primaryNotes && (
-          <Text style={styles.notesText} numberOfLines={3}>{primaryNotes}</Text>
-        )}
-      </View>
+      {/* ── Level badge inline with notes; second line wraps to left edge ── */}
+      <Text style={styles.levelLine}>
+        <Text style={[styles.inlineBadge, { color: levelStyle.text, backgroundColor: levelStyle.bg }]}>
+          {' '}{levelStyle.label}{' '}
+        </Text>
+        {primaryNotes ? '  ' + primaryNotes : ''}
+      </Text>
 
       {/* ── Discrepancy warning ── */}
       {group.hasDiscrepancy && (
@@ -99,8 +121,8 @@ export function VaccineResultCard({
         </View>
       )}
 
-      {/* ── Action buttons ── */}
-      {!isInPassport && (
+      {/* ── Action buttons (only when not yet selected) ── */}
+      {!isInPassport && !isOnChecklist && (
         <>
           <Button
             label="I already got this vaccine"
@@ -109,13 +131,19 @@ export function VaccineResultCard({
             style={styles.btn}
           />
           <Button
-            label={isOnChecklist ? "✓ Added to checklist" : "Add to my checklist"}
+            label="Add to my checklist"
             onPress={onAddToChecklist}
             variant="outline"
-            disabled={isOnChecklist}
             style={styles.btn}
           />
         </>
+      )}
+
+      {/* ── Undo button (bottom-right when card has a selection) ── */}
+      {showUndo && (
+        <TouchableOpacity onPress={onUndo} style={styles.undoButton}>
+          <Text style={styles.undoText}>↩ Undo</Text>
+        </TouchableOpacity>
       )}
     </View>
   )
@@ -136,6 +164,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F8F1',
     borderColor: '#A5D6A7',
   },
+  cardPending: {
+    backgroundColor: '#FFFDE7',
+    borderColor: '#FFE082',
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -152,6 +184,14 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
   coveredBadgeText: { ...typography.caption, color: '#2E7D32', fontWeight: '700' },
+  pendingBadge: {
+    backgroundColor: '#FFF8E1',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginLeft: spacing.sm,
+  },
+  pendingBadgeText: { ...typography.caption, color: '#7B5800', fontWeight: '700' },
   sourcesRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -161,20 +201,8 @@ const styles = StyleSheet.create({
   sourceLink: { ...typography.caption, color: colors.primary, fontWeight: '600' },
   sourcePlain: { ...typography.caption, color: colors.textSecondary },
   sourceDot: { ...typography.caption, color: colors.textMuted },
-  levelNotesRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    flexWrap: 'wrap',
-  },
-  levelBadge: {
-    borderRadius: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    alignSelf: 'flex-start',
-  },
-  levelBadgeText: { ...typography.caption, fontWeight: '700' },
-  notesText: { ...typography.bodySmall, color: colors.textSecondary, flex: 1 },
+  levelLine: { ...typography.bodySmall, color: colors.textSecondary, marginVertical: spacing.xs },
+  inlineBadge: { ...typography.caption, fontWeight: '700', borderRadius: 3 },
   discrepancyBox: {
     backgroundColor: '#FFF8E1',
     borderRadius: borderRadius.sm,
@@ -184,4 +212,6 @@ const styles = StyleSheet.create({
   discrepancyText: { ...typography.bodySmall, color: '#7B5800' },
   reportLink: { ...typography.caption, color: colors.primary, fontWeight: '600' },
   btn: { marginTop: 0 },
+  undoButton: { alignSelf: 'flex-end', paddingTop: spacing.xs },
+  undoText: { ...typography.caption, color: colors.textMuted },
 })

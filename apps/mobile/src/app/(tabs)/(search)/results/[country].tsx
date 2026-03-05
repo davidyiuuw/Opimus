@@ -10,12 +10,12 @@ import {
   VaccineRecommendation, VaccineGroup,
   TravelAdvisory, GroupedRecommendations, RecommendationLevel,
 } from '@opimus/types'
-import { supabase } from '../../lib/supabase'
-import { AdvisoryBanner } from '../../components/AdvisoryBanner'
-import { VaccineResultCard } from '../../components/VaccineResultCard'
-import { colors } from '../../theme/colors'
-import { typography } from '../../theme/typography'
-import { spacing } from '../../theme/spacing'
+import { supabase } from '../../../../lib/supabase'
+import { AdvisoryBanner } from '../../../../components/AdvisoryBanner'
+import { VaccineResultCard } from '../../../../components/VaccineResultCard'
+import { colors } from '../../../../theme/colors'
+import { typography } from '../../../../theme/typography'
+import { spacing } from '../../../../theme/spacing'
 import { useLayoutEffect } from 'react'
 
 const LEVEL_PRIORITY: Record<RecommendationLevel, number> = {
@@ -89,37 +89,22 @@ async function fetchRecommendations(countryCode: string): Promise<GroupedRecomme
 
 async function fetchAdvisory(countryCode: string): Promise<TravelAdvisory | null> {
   const { data: country } = await supabase
-    .from('countries')
-    .select('id')
-    .eq('code', countryCode.toUpperCase())
-    .single()
-
+    .from('countries').select('id').eq('code', countryCode.toUpperCase()).single()
   if (!country) return null
-
   const { data } = await supabase
-    .from('travel_advisories')
-    .select('*')
-    .eq('country_id', country.id)
-    .maybeSingle()
-
+    .from('travel_advisories').select('*').eq('country_id', country.id).maybeSingle()
   return data ?? null
 }
 
 async function fetchCountryName(countryCode: string): Promise<string> {
   const { data } = await supabase
-    .from('countries')
-    .select('name')
-    .eq('code', countryCode.toUpperCase())
-    .single()
+    .from('countries').select('name').eq('code', countryCode.toUpperCase()).single()
   return data?.name ?? countryCode
 }
 
 async function fetchCountryId(countryCode: string): Promise<number | null> {
   const { data } = await supabase
-    .from('countries')
-    .select('id')
-    .eq('code', countryCode.toUpperCase())
-    .single()
+    .from('countries').select('id').eq('code', countryCode.toUpperCase()).single()
   return data?.id ?? null
 }
 
@@ -130,52 +115,57 @@ async function fetchPassportIds(): Promise<{ vaccine_id: number }[]> {
 
 async function fetchChecklistIds(countryCode: string): Promise<{ vaccine_id: number }[]> {
   const { data: country } = await supabase
-    .from('countries')
-    .select('id')
-    .eq('code', countryCode.toUpperCase())
-    .single()
-
+    .from('countries').select('id').eq('code', countryCode.toUpperCase()).single()
   if (!country) return []
-
   const { data } = await supabase
-    .from('checklist_items')
-    .select('vaccine_id')
-    .eq('country_id', country.id)
-
+    .from('checklist_items').select('vaccine_id').eq('country_id', country.id)
   return data ?? []
 }
 
 async function addToPassport(vaccineId: number): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
-
   const { error } = await supabase
-    .from('user_vaccines')
-    .insert({ user_id: user.id, vaccine_id: vaccineId })
-
+    .from('user_vaccines').insert({ user_id: user.id, vaccine_id: vaccineId })
   if (error) throw new Error(error.message)
 }
 
 async function addToChecklist(params: { vaccineId: number; countryId: number }): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
-
   const { error } = await supabase
     .from('checklist_items')
     .insert({ user_id: user.id, country_id: params.countryId, vaccine_id: params.vaccineId })
-
-  // Ignore duplicate (already on checklist)
   if (error && error.code !== '23505') throw new Error(error.message)
+}
+
+async function removeFromPassport(vaccineId: number): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+  const { error } = await supabase
+    .from('user_vaccines')
+    .delete().eq('user_id', user.id).eq('vaccine_id', vaccineId)
+  if (error) throw new Error(error.message)
+}
+
+async function removeFromChecklist(params: { vaccineId: number; countryId: number }): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+  const { error } = await supabase
+    .from('checklist_items')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('country_id', params.countryId)
+    .eq('vaccine_id', params.vaccineId)
+  if (error) throw new Error(error.message)
 }
 
 async function reportDiscrepancy(params: { countryId: number; vaccineId: number }): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
-
   const { error } = await supabase
     .from('discrepancy_reports')
     .insert({ user_id: user.id, country_id: params.countryId, vaccine_id: params.vaccineId })
-
   if (error) throw new Error(error.message)
 }
 
@@ -228,6 +218,32 @@ export default function ResultsScreen() {
 
   const addChecklistMutation = useMutation({
     mutationFn: addToChecklist,
+    onMutate: async ({ vaccineId }) => {
+      await queryClient.cancelQueries({ queryKey: ['checklistIds', country] })
+      const prev = queryClient.getQueryData<{ vaccine_id: number }[]>(['checklistIds', country]) ?? []
+      queryClient.setQueryData(['checklistIds', country], [...prev, { vaccine_id: vaccineId }])
+      return { prev }
+    },
+    onError: (_err, _vars, context) => {
+      queryClient.setQueryData(['checklistIds', country], context?.prev)
+      Alert.alert('Could not add to checklist', 'Please try again.')
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['checklistIds', country] })
+      queryClient.invalidateQueries({ queryKey: ['checklist'] })
+    },
+  })
+
+  const undoPassportMutation = useMutation({
+    mutationFn: removeFromPassport,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['passportIds'] })
+      queryClient.invalidateQueries({ queryKey: ['passport'] })
+    },
+  })
+
+  const undoChecklistMutation = useMutation({
+    mutationFn: removeFromChecklist,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['checklistIds', country] })
       queryClient.invalidateQueries({ queryKey: ['checklist'] })
@@ -249,12 +265,17 @@ export default function ResultsScreen() {
       "Flag this vaccine's recommendation sources as inconsistent or incorrect?",
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Submit Report',
-          onPress: () => reportMutation.mutate({ countryId, vaccineId }),
-        },
+        { text: 'Submit Report', onPress: () => reportMutation.mutate({ countryId, vaccineId }) },
       ],
     )
+  }
+
+  function handleUndo(vaccineId: number) {
+    if (passportVaccineIds.has(vaccineId)) {
+      undoPassportMutation.mutate(vaccineId)
+    } else if (checklistVaccineIds.has(vaccineId) && countryId) {
+      undoChecklistMutation.mutate({ vaccineId, countryId })
+    }
   }
 
   const passportVaccineIds = new Set(passportIds.map((v) => v.vaccine_id))
@@ -275,7 +296,6 @@ export default function ResultsScreen() {
   ].filter((s) => s.data.length > 0)
 
   return (
-    // edges={['bottom']} — the Stack header already handles the top safe area
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <SectionList
         sections={sections}
@@ -295,6 +315,7 @@ export default function ResultsScreen() {
             onAddToChecklist={() => {
               if (countryId) addChecklistMutation.mutate({ vaccineId: item.vaccine_id, countryId })
             }}
+            onUndo={() => handleUndo(item.vaccine_id)}
             onReport={() => handleReport(item.vaccine_id)}
           />
         )}

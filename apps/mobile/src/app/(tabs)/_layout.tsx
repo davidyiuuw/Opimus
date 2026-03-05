@@ -14,8 +14,8 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen
-        name="index"
-        options={{ title: 'Search', tabBarLabel: 'Search' }}
+        name="(search)"
+        options={{ title: 'Search', tabBarLabel: 'Search', headerShown: false }}
       />
       <Tabs.Screen
         name="checklist"

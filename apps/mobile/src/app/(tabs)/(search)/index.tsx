@@ -4,14 +4,14 @@ import {
   View, Text, TextInput, FlatList, Modal,
   TouchableOpacity, TouchableWithoutFeedback,
   KeyboardAvoidingView, Keyboard, Platform,
-  StyleSheet,  ActivityIndicator,
+  StyleSheet, ActivityIndicator,
 } from 'react-native'
 import { router } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
-import { supabase } from '../../lib/supabase'
-import { colors } from '../../theme/colors'
-import { typography } from '../../theme/typography'
-import { borderRadius, spacing } from '../../theme/spacing'
+import { supabase } from '../../../lib/supabase'
+import { colors } from '../../../theme/colors'
+import { typography } from '../../../theme/typography'
+import { borderRadius, spacing } from '../../../theme/spacing'
 
 interface Country {
   id: number
