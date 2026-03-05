@@ -21,7 +21,9 @@
       "Bash(git push:*)",
       "Bash(find:*)",
       "Bash(npx expo install:*)",
-      "Bash(~/.local/bin/pnpm add:*)"
+      "Bash(~/.local/bin/pnpm add:*)",
+      "Bash(git log:*)",
+      "Bash(git ls-tree:*)"
     ]
   }
 }

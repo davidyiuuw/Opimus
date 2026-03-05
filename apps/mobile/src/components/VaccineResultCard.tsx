@@ -10,6 +10,7 @@ interface VaccineResultCardProps {
   group: VaccineGroup
   isInPassport: boolean
   isOnChecklist: boolean
+  administeredAt?: string | null
   onAddToPassport: () => void
   onAddToChecklist: () => void
   onUndo: () => void
@@ -30,8 +31,6 @@ const LEVEL_STYLE: Record<RecommendationLevel, { bg: string; text: string; label
   not_recommended: { bg: '#F5F5F5', text: '#757575', label: 'Not recommended' },
 }
 
-// Strip the level word from the start of notes to avoid "Required Required if..."
-// Only applies to required/recommended — "Routine vaccines should..." reads fine as-is.
 function stripLevelPrefix(notes: string, label: string): string {
   const trimmed = notes.trimStart()
   if (trimmed.toLowerCase().startsWith(label.toLowerCase())) {
@@ -40,23 +39,49 @@ function stripLevelPrefix(notes: string, label: string): string {
   return trimmed
 }
 
+function intervalToText(days: number): string {
+  if (days % 365 === 0) {
+    const years = days / 365
+    return years === 1 ? '1 year' : `${years} years`
+  }
+  if (days % 30 === 0) {
+    const months = days / 30
+    return months === 1 ? '1 month' : `${months} months`
+  }
+  return `${days} days`
+}
+
 export function VaccineResultCard({
-  group, isInPassport, isOnChecklist,
+  group, isInPassport, isOnChecklist, administeredAt,
   onAddToPassport, onAddToChecklist, onUndo, onReport,
 }: VaccineResultCardProps) {
   const vaccine = group.vaccine
   const disease = vaccine?.disease
   const levelStyle = LEVEL_STYLE[group.primaryLevel]
   const rawNotes = group.sources.find((s) => s.notes)?.notes ?? null
-  const primaryNotes = rawNotes && (group.primaryLevel === 'required' || group.primaryLevel === 'recommended')
-    ? stripLevelPrefix(rawNotes, levelStyle.label)
-    : rawNotes
 
-  const cardStyle = isInPassport
-    ? styles.cardCovered
-    : isOnChecklist
-      ? styles.cardPending
-      : null
+  // Routine always uses the canonical message; other levels strip redundant level prefix
+  const primaryNotes = group.primaryLevel === 'routine'
+    ? 'All travelers should be up-to-date on all routine vaccines.'
+    : rawNotes && (group.primaryLevel === 'required' || group.primaryLevel === 'recommended')
+      ? stripLevelPrefix(rawNotes, levelStyle.label)
+      : rawNotes
+
+  // Booster / up-to-date logic
+  const boosterIntervalDays = vaccine?.booster_interval_days ?? null
+  const needsBooster = isInPassport
+    && boosterIntervalDays !== null
+    && administeredAt != null
+    && (Date.now() - new Date(administeredAt).getTime()) >= boosterIntervalDays * 24 * 60 * 60 * 1000
+  const isUpToDate = isInPassport && !needsBooster
+
+  const cardStyle = needsBooster
+    ? styles.cardBoosterDue
+    : isUpToDate
+      ? styles.cardCovered
+      : isOnChecklist
+        ? styles.cardPending
+        : null
 
   const showUndo = isInPassport || isOnChecklist
 
@@ -69,7 +94,12 @@ export function VaccineResultCard({
           <Text style={styles.name}>{vaccine?.name ?? 'Unknown Vaccine'}</Text>
           {disease && <Text style={styles.disease}>{disease.name}</Text>}
         </View>
-        {isInPassport && (
+        {needsBooster && (
+          <View style={styles.boosterDueBadge}>
+            <Text style={styles.boosterDueBadgeText}>↻ Booster due</Text>
+          </View>
+        )}
+        {isUpToDate && !needsBooster && (
           <View style={styles.coveredBadge}>
             <Text style={styles.coveredBadgeText}>✓ Up-to-date</Text>
           </View>
@@ -101,23 +131,44 @@ export function VaccineResultCard({
         })}
       </View>
 
-      {/* ── Level badge inline with notes; second line wraps to left edge ── */}
-      <Text style={styles.levelLine}>
-        <Text style={[styles.inlineBadge, { color: levelStyle.text, backgroundColor: levelStyle.bg }]}>
-          {' '}{levelStyle.label}{' '}
+      {/* ── Level badge + notes; undo inline when no discrepancy ── */}
+      <View style={showUndo && !group.hasDiscrepancy ? styles.levelRow : null}>
+        <Text style={[styles.levelLine, showUndo && !group.hasDiscrepancy && styles.levelLineFlex]}>
+          <Text style={[styles.inlineBadge, { color: levelStyle.text, backgroundColor: levelStyle.bg }]}>
+            {' '}{levelStyle.label}{' '}
+          </Text>
+          {primaryNotes ? '  ' + primaryNotes : ''}
         </Text>
-        {primaryNotes ? '  ' + primaryNotes : ''}
-      </Text>
+        {showUndo && !group.hasDiscrepancy && (
+          <TouchableOpacity onPress={onUndo} style={styles.undoInline}>
+            <Text style={styles.undoText}>↩ Undo</Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
-      {/* ── Discrepancy warning ── */}
+      {/* ── Booster interval ── */}
+      {boosterIntervalDays !== null && (
+        <Text style={styles.boosterInterval}>
+          Revaccination recommended every {intervalToText(boosterIntervalDays)}
+        </Text>
+      )}
+
+      {/* ── Discrepancy warning (undo inline at bottom-right of box) ── */}
       {group.hasDiscrepancy && (
         <View style={styles.discrepancyBox}>
           <Text style={styles.discrepancyText}>
             ⚠ Sources disagree on the requirement level. Use your judgement or consult a travel doctor.
           </Text>
-          <TouchableOpacity onPress={onReport}>
-            <Text style={styles.reportLink}>Report issue →</Text>
-          </TouchableOpacity>
+          <View style={styles.discrepancyFooter}>
+            <TouchableOpacity onPress={onReport}>
+              <Text style={styles.reportLink}>Report issue →</Text>
+            </TouchableOpacity>
+            {showUndo && (
+              <TouchableOpacity onPress={onUndo}>
+                <Text style={styles.undoText}>↩ Undo</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       )}
 
@@ -137,13 +188,6 @@ export function VaccineResultCard({
             style={styles.btn}
           />
         </>
-      )}
-
-      {/* ── Undo button (bottom-right when card has a selection) ── */}
-      {showUndo && (
-        <TouchableOpacity onPress={onUndo} style={styles.undoButton}>
-          <Text style={styles.undoText}>↩ Undo</Text>
-        </TouchableOpacity>
       )}
     </View>
   )
@@ -168,6 +212,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFDE7',
     borderColor: '#FFE082',
   },
+  cardBoosterDue: {
+    backgroundColor: '#FFF8E1',
+    borderColor: '#FFB300',
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -184,6 +232,14 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
   coveredBadgeText: { ...typography.caption, color: '#2E7D32', fontWeight: '700' },
+  boosterDueBadge: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginLeft: spacing.sm,
+  },
+  boosterDueBadgeText: { ...typography.caption, color: '#E65100', fontWeight: '700' },
   pendingBadge: {
     backgroundColor: '#FFF8E1',
     borderRadius: 6,
@@ -201,8 +257,17 @@ const styles = StyleSheet.create({
   sourceLink: { ...typography.caption, color: colors.primary, fontWeight: '600' },
   sourcePlain: { ...typography.caption, color: colors.textSecondary },
   sourceDot: { ...typography.caption, color: colors.textMuted },
+  levelRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
   levelLine: { ...typography.bodySmall, color: colors.textSecondary, marginVertical: spacing.xs },
+  levelLineFlex: { flex: 1 },
   inlineBadge: { ...typography.caption, fontWeight: '700', borderRadius: 3 },
+  undoInline: { paddingBottom: spacing.xs },
+  undoText: { ...typography.caption, color: colors.textMuted },
+  boosterInterval: {
+    ...typography.caption,
+    color: '#7B5800',
+    fontStyle: 'italic',
+  },
   discrepancyBox: {
     backgroundColor: '#FFF8E1',
     borderRadius: borderRadius.sm,
@@ -210,8 +275,11 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   discrepancyText: { ...typography.bodySmall, color: '#7B5800' },
+  discrepancyFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   reportLink: { ...typography.caption, color: colors.primary, fontWeight: '600' },
   btn: { marginTop: 0 },
-  undoButton: { alignSelf: 'flex-end', paddingTop: spacing.xs },
-  undoText: { ...typography.caption, color: colors.textMuted },
 })

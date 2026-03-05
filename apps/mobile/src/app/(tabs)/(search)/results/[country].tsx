@@ -108,8 +108,8 @@ async function fetchCountryId(countryCode: string): Promise<number | null> {
   return data?.id ?? null
 }
 
-async function fetchPassportIds(): Promise<{ vaccine_id: number }[]> {
-  const { data } = await supabase.from('user_vaccines').select('vaccine_id')
+async function fetchPassportIds(): Promise<{ vaccine_id: number; administered_at: string | null }[]> {
+  const { data } = await supabase.from('user_vaccines').select('vaccine_id, administered_at')
   return data ?? []
 }
 
@@ -279,6 +279,7 @@ export default function ResultsScreen() {
   }
 
   const passportVaccineIds = new Set(passportIds.map((v) => v.vaccine_id))
+  const passportDates = new Map(passportIds.map((v) => [v.vaccine_id, v.administered_at]))
   const checklistVaccineIds = new Set(checklistIds.map((v) => v.vaccine_id))
 
   if (loadingVaccines) {
@@ -296,7 +297,7 @@ export default function ResultsScreen() {
   ].filter((s) => s.data.length > 0)
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <SectionList
         sections={sections}
         keyExtractor={(item) => String(item.vaccine_id)}
@@ -311,6 +312,7 @@ export default function ResultsScreen() {
             group={item}
             isInPassport={passportVaccineIds.has(item.vaccine_id)}
             isOnChecklist={checklistVaccineIds.has(item.vaccine_id)}
+            administeredAt={passportDates.get(item.vaccine_id) ?? null}
             onAddToPassport={() => addPassportMutation.mutate(item.vaccine_id)}
             onAddToChecklist={() => {
               if (countryId) addChecklistMutation.mutate({ vaccineId: item.vaccine_id, countryId })

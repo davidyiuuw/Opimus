@@ -1,6 +1,7 @@
 import { SafeAreaView } from 'react-native-safe-area-context'
 import React, { useEffect, useState } from 'react'
 import { View, Text, StyleSheet,  Alert, ActivityIndicator } from 'react-native'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from '../../lib/supabase'
 import { UserProfile } from '@opimus/types'
 import { Button } from '../../components/ui/Button'
@@ -48,6 +49,7 @@ export default function ProfileScreen() {
   }
 
   async function handleSignOut() {
+    await AsyncStorage.removeItem('idk_popup_count')
     await supabase.auth.signOut()
     // onAuthStateChange in _layout.tsx handles redirect to (auth)
   }

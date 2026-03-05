@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { View, Text, ScrollView, TouchableOpacity, TouchableWithoutFeedback, KeyboardAvoidingView, Keyboard, Platform, StyleSheet, Alert } from 'react-native'
+import { View, Text, ScrollView, TouchableOpacity, TouchableWithoutFeedback, KeyboardAvoidingView, Keyboard, Platform, StyleSheet, Alert, Linking } from 'react-native'
 import { Link } from 'expo-router'
 import * as AppleAuthentication from 'expo-apple-authentication'
 import { supabase } from '../../lib/supabase'
@@ -30,6 +30,18 @@ export default function SignInScreen() {
     setLoading(false)
     if (error) Alert.alert('Sign In Failed', error.message)
     // On success, the onAuthStateChange listener in _layout.tsx handles redirect
+  }
+
+  async function handleGoogleSignIn() {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { skipBrowserRedirect: true },
+    })
+    if (error) {
+      Alert.alert('Google Sign In Failed', error.message)
+      return
+    }
+    if (data.url) await Linking.openURL(data.url)
   }
 
   async function handleAppleSignIn() {
@@ -65,7 +77,7 @@ export default function SignInScreen() {
         >
           <View style={styles.header}>
             <Text style={styles.title}>Opimus</Text>
-            <Text style={styles.subtitle}>Your travel vaccine companion</Text>
+            <Text style={styles.subtitle}>Your health travels with you.</Text>
           </View>
 
           <View style={styles.form}>
@@ -104,6 +116,11 @@ export default function SignInScreen() {
               style={styles.appleButton}
               onPress={handleAppleSignIn}
             />
+
+            <TouchableOpacity style={styles.googleButton} onPress={handleGoogleSignIn} activeOpacity={0.8}>
+              <Text style={styles.googleG}>G</Text>
+              <Text style={styles.googleText}>Continue with Google</Text>
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity style={styles.footer}>
@@ -130,6 +147,20 @@ const styles = StyleSheet.create({
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
   dividerText: { ...typography.bodySmall, color: colors.textMuted },
   appleButton: { width: '100%', height: 50 },
+  googleButton: {
+    width: '100%',
+    height: 50,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#DADCE0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  googleG: { fontSize: 18, fontWeight: '700', color: '#4285F4' },
+  googleText: { fontSize: 15, fontWeight: '600', color: '#3C4043' },
   footer: { marginTop: spacing.xl, alignItems: 'center' },
   footerText: { ...typography.body, color: colors.textSecondary },
   footerLink: { color: colors.primary, fontWeight: '600' },

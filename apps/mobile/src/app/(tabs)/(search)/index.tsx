@@ -1,19 +1,23 @@
 import { SafeAreaView } from 'react-native-safe-area-context'
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import {
   View, Text, TextInput, FlatList, Modal, ScrollView,
   TouchableOpacity, TouchableWithoutFeedback,
   KeyboardAvoidingView, Keyboard, Platform,
-  StyleSheet, ActivityIndicator, Share,
+  StyleSheet, ActivityIndicator, Share, NativeScrollEvent, NativeSyntheticEvent,
 } from 'react-native'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { router } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../../lib/supabase'
 import { Button } from '../../../components/ui/Button'
+import { OpimusMenu } from '../../../components/OpimusMenu'
 import { colors } from '../../../theme/colors'
 import { typography } from '../../../theme/typography'
 import { borderRadius, spacing } from '../../../theme/spacing'
+
+const IDK_POPUP_KEY = 'idk_popup_count'
 
 interface Country {
   id: number
@@ -45,15 +49,29 @@ async function fetchAllCountries(): Promise<Country[]> {
   return data ?? []
 }
 
+// Height of the Opimus nav bar that sits above the visible scroll area on mount
+const NAV_BAR_HEIGHT = 46
+
 export default function PlanScreen() {
+  const scrollRef = useRef<ScrollView>(null)
   const [countryModalVisible, setCountryModalVisible] = useState(false)
   const [dateModalVisible, setDateModalVisible] = useState(false)
+  const [showUnknownModal, setShowUnknownModal] = useState(false)
   const [filter, setFilter] = useState('')
   const [selectedCountry, setSelectedCountry] = useState<Country | null>(null)
   const [entryDate, setEntryDate] = useState<Date | null>(null)
   const [pendingDate, setPendingDate] = useState<Date>(new Date())
   const [travelers, setTravelers] = useState<TravelerOption | null>(null)
   const [kids, setKids] = useState<Kid[]>([])
+  const [dateUnknown, setDateUnknown] = useState(false)
+
+  // Start scrolled just past the Opimus nav bar so it's hidden until the user pulls down
+  useEffect(() => {
+    const t = setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: NAV_BAR_HEIGHT, animated: false })
+    }, 50)
+    return () => clearTimeout(t)
+  }, [])
 
   const { data: countries = [], isLoading } = useQuery<Country[]>({
     queryKey: ['countries'],
@@ -61,17 +79,39 @@ export default function PlanScreen() {
     staleTime: 1000 * 60 * 30,
   })
 
-  const filtered = filter.trim().length === 0
+  const filterLower = filter.toLowerCase().trim()
+  const filtered = filterLower.length === 0
     ? countries
-    : countries.filter(c =>
-        c.name.toLowerCase().includes(filter.toLowerCase()) ||
-        (c.region ?? '').toLowerCase().includes(filter.toLowerCase())
-      )
+    : countries.filter(c => {
+        const words = [
+          ...c.name.toLowerCase().split(/\s+/),
+          ...(c.region ?? '').toLowerCase().split(/\s+/),
+        ]
+        return words.some(w => w.startsWith(filterLower))
+      })
 
   function handleSelectCountry(country: Country) {
     setSelectedCountry(country)
     setCountryModalVisible(false)
     setFilter('')
+  }
+
+  async function handleDateUnknown() {
+    if (dateUnknown) {
+      // Toggle off — just deselect, let user pick a date normally
+      setDateUnknown(false)
+      return
+    }
+    // Toggle on — clear any selected date
+    setDateUnknown(true)
+    setEntryDate(null)
+    // Show popup if it hasn't been shown twice yet
+    const raw = await AsyncStorage.getItem(IDK_POPUP_KEY)
+    const count = parseInt(raw ?? '0', 10)
+    if (count < 2) {
+      setShowUnknownModal(true)
+      await AsyncStorage.setItem(IDK_POPUP_KEY, String(count + 1))
+    }
   }
 
   function handleTravelerSelect(option: TravelerOption) {
@@ -109,11 +149,20 @@ export default function PlanScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* ── Opimus nav bar — lives above the hero, revealed on pull-down ── */}
+        <View style={styles.navBar}>
+          <View style={{ flex: 1 }} />
+          <OpimusMenu />
+        </View>
 
         {/* ── Hero ── */}
         <View style={styles.hero}>
-          <Text style={styles.heading}>Make a plan to{'\n'}get vaccinated.</Text>
+          <Text style={styles.heading}>Make a plan to{'\n'}get protected</Text>
           <Text style={styles.subheading}>
             Find what vaccines you need and plan your trip.
           </Text>
@@ -150,6 +199,17 @@ export default function PlanScreen() {
             </Text>
             <Text style={styles.selectArrow}>📅</Text>
           </TouchableOpacity>
+
+          {/* "I don't know yet" toggle bubble */}
+          <TouchableOpacity
+            style={[styles.unknownBubble, dateUnknown && styles.unknownBubbleActive]}
+            onPress={handleDateUnknown}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.unknownBubbleText, dateUnknown && styles.unknownBubbleTextActive]}>
+              I don't know yet
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Who ── */}
@@ -175,20 +235,6 @@ export default function PlanScreen() {
               </TouchableOpacity>
             ))}
           </View>
-
-          {/* Someone else — share prompt */}
-          {travelers === 'someone_else' && (
-            <View style={styles.shareHint}>
-              <Text style={styles.shareHintText}>
-                A share sheet was opened so you can send them the app link. Tap below to share again.
-              </Text>
-              <TouchableOpacity onPress={() => Share.share({
-                message: "I'm using Opimus to plan my travel vaccinations. Download the app and travel prepared! https://opimus.app",
-              })}>
-                <Text style={styles.shareAgain}>Share again →</Text>
-              </TouchableOpacity>
-            </View>
-          )}
 
           {/* Family — kids section */}
           {travelers === 'family' && (
@@ -240,6 +286,27 @@ export default function PlanScreen() {
         />
 
       </ScrollView>
+
+      {/* ── "I don't know yet" popup ── */}
+      <Modal
+        visible={showUnknownModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowUnknownModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.popupCard}>
+            <Text style={styles.popupTitle}>Plan ahead!</Text>
+            <Text style={styles.popupBody}>
+              Most vaccines take about 2 weeks to work. The sooner you know your travel dates, the better!
+            </Text>
+            <Button
+              label="I understand"
+              onPress={() => setShowUnknownModal(false)}
+            />
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Country picker modal ── */}
       <Modal
@@ -312,6 +379,7 @@ export default function PlanScreen() {
             <Text style={styles.modalTitle}>Entry Date</Text>
             <TouchableOpacity onPress={() => {
               setEntryDate(pendingDate)
+              setDateUnknown(false)
               setDateModalVisible(false)
             }}>
               <Text style={styles.modalClose}>Done</Text>
@@ -334,9 +402,14 @@ export default function PlanScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  scroll: { padding: spacing.lg, gap: spacing.lg },
+  scroll: { padding: spacing.lg, paddingTop: spacing.sm, gap: spacing.lg },
+  navBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: NAV_BAR_HEIGHT,
+  },
   hero: { gap: spacing.sm, paddingBottom: spacing.sm },
-  heading: { ...typography.h1, color: colors.textPrimary },
+  heading: { fontSize: 36, fontWeight: '800', lineHeight: 44, color: colors.textPrimary },
   subheading: { ...typography.body, color: colors.textSecondary, lineHeight: 22 },
   section: { gap: spacing.sm },
   sectionLabel: {
@@ -360,6 +433,46 @@ const styles = StyleSheet.create({
   selectButtonText: { ...typography.body, color: colors.textMuted },
   selectButtonTextFilled: { color: colors.textPrimary },
   selectArrow: { fontSize: 14, color: colors.textMuted },
+  // "I don't know yet" bubble
+  unknownBubble: {
+    alignSelf: 'flex-start',
+    height: 34,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  unknownBubbleActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  unknownBubbleText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
+  unknownBubbleTextActive: { color: '#fff' },
+  // Popup overlay
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  popupCard: {
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    gap: spacing.md,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  popupTitle: { ...typography.h3, color: colors.textPrimary },
+  popupBody: { ...typography.body, color: colors.textSecondary, lineHeight: 22 },
   travelerRow: { flexDirection: 'row', gap: spacing.sm },
   travelerButton: {
     flex: 1,
@@ -377,15 +490,6 @@ const styles = StyleSheet.create({
   },
   travelerButtonText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
   travelerButtonTextActive: { color: '#fff' },
-  // Someone else
-  shareHint: {
-    backgroundColor: '#EEF2FF',
-    borderRadius: borderRadius.sm,
-    padding: spacing.sm,
-    gap: 4,
-  },
-  shareHintText: { ...typography.bodySmall, color: colors.textSecondary },
-  shareAgain: { ...typography.bodySmall, color: colors.primary, fontWeight: '600' },
   // Family / kids
   kidsSection: {
     backgroundColor: colors.surface,

@@ -15,6 +15,7 @@ export interface Vaccine {
   manufacturer: string | null
   doses: number
   notes: string | null
+  booster_interval_days: number | null
 }
 
 export interface VaccineRecommendation {
