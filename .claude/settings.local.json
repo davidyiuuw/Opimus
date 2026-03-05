@@ -19,7 +19,9 @@
       "Bash(git remote add:*)",
       "Bash(git branch:*)",
       "Bash(git push:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(npx expo install:*)",
+      "Bash(~/.local/bin/pnpm add:*)"
     ]
   }
 }
