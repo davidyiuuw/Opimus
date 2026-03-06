@@ -23,7 +23,12 @@
       "Bash(npx expo install:*)",
       "Bash(~/.local/bin/pnpm add:*)",
       "Bash(git log:*)",
-      "Bash(git ls-tree:*)"
+      "Bash(git ls-tree:*)",
+      "WebFetch(domain:wwwnc.cdc.gov)",
+      "WebFetch(domain:travel.state.gov)",
+      "Bash(pnpm --filter @opimus/scraper run-once:*)",
+      "Bash(tee:*)",
+      "Bash(echo:*)"
     ]
   }
 }
