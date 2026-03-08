@@ -28,7 +28,8 @@
       "WebFetch(domain:travel.state.gov)",
       "Bash(pnpm --filter @opimus/scraper run-once:*)",
       "Bash(tee:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(ls:*)"
     ]
   }
 }

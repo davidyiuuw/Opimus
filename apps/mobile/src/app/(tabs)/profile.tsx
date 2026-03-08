@@ -1,16 +1,18 @@
 import { SafeAreaView } from 'react-native-safe-area-context'
 import React, { useEffect, useState } from 'react'
-import { View, Text, StyleSheet,  Alert, ActivityIndicator } from 'react-native'
+import { View, Text, StyleSheet, Alert, ActivityIndicator, TouchableOpacity } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { UserProfile } from '@opimus/types'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { colors } from '../../theme/colors'
 import { typography } from '../../theme/typography'
-import { spacing } from '../../theme/spacing'
+import { spacing, borderRadius } from '../../theme/spacing'
 
 export default function ProfileScreen() {
+  const router = useRouter()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [displayName, setDisplayName] = useState('')
   const [saving, setSaving] = useState(false)
@@ -51,7 +53,6 @@ export default function ProfileScreen() {
   async function handleSignOut() {
     await AsyncStorage.removeItem('idk_popup_count')
     await supabase.auth.signOut()
-    // onAuthStateChange in _layout.tsx handles redirect to (auth)
   }
 
   if (loading) {
@@ -83,6 +84,11 @@ export default function ProfileScreen() {
 
         <Button label="Save Changes" onPress={handleSave} loading={saving} />
 
+        <TouchableOpacity style={styles.navRow} onPress={() => router.push('/preferences')} activeOpacity={0.7}>
+          <Text style={styles.navRowLabel}>Preferences</Text>
+          <Text style={styles.navRowChevron}>›</Text>
+        </TouchableOpacity>
+
         <View style={styles.spacer} />
 
         <Button label="Sign Out" onPress={handleSignOut} variant="outline" />
@@ -103,5 +109,18 @@ const styles = StyleSheet.create({
   },
   avatarText: { ...typography.h1, color: '#fff' },
   email: { ...typography.body, color: colors.textSecondary },
+  navRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  navRowLabel: { ...typography.body, color: colors.textPrimary },
+  navRowChevron: { fontSize: 22, color: colors.textMuted, lineHeight: 26 },
   spacer: { flex: 1 },
 })

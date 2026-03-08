@@ -1,5 +1,5 @@
 import { SafeAreaView } from 'react-native-safe-area-context'
-import React from 'react'
+import React, { useState } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, ActivityIndicator, Alert,
@@ -21,15 +21,30 @@ interface ChecklistTrip {
   country_id: number
   country_code: string
   country_name: string
+  entry_date: string | null   // ISO date string YYYY-MM-DD
   lastAdded: string
   vaccines: ChecklistVaccine[]
+}
+
+const DUE_LEAD_DAYS = 28 // 4 weeks before travel
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'long', day: 'numeric', year: 'numeric',
+  })
+}
+
+function dueDate(entryDate: string): string {
+  const d = new Date(entryDate)
+  d.setDate(d.getDate() - DUE_LEAD_DAYS)
+  return formatDate(d.toISOString())
 }
 
 async function fetchChecklist(): Promise<ChecklistTrip[]> {
   const { data, error } = await supabase
     .from('checklist_items')
     .select(`
-      id, vaccine_id, country_id, created_at,
+      id, vaccine_id, country_id, created_at, entry_date,
       vaccines ( id, name ),
       countries ( id, code, name )
     `)
@@ -48,12 +63,14 @@ async function fetchChecklist(): Promise<ChecklistTrip[]> {
         country_id: cid,
         country_code: countryInfo?.code ?? '',
         country_name: countryInfo?.name ?? '',
+        entry_date: item.entry_date ?? null,
         lastAdded: item.created_at,
         vaccines: [],
       })
     }
 
     const trip = byCountry.get(cid)!
+    if (item.entry_date && !trip.entry_date) trip.entry_date = item.entry_date
     trip.vaccines.push({
       id: item.id,
       vaccine_id: item.vaccine_id,
@@ -63,19 +80,29 @@ async function fetchChecklist(): Promise<ChecklistTrip[]> {
     if (item.created_at > trip.lastAdded) trip.lastAdded = item.created_at
   }
 
-  return Array.from(byCountry.values())
+  const trips = Array.from(byCountry.values())
+
+  // Sort: entry_date trips first (soonest first), then no-date trips (latest added first)
+  trips.sort((a, b) => {
+    if (a.entry_date && b.entry_date) {
+      return new Date(a.entry_date).getTime() - new Date(b.entry_date).getTime()
+    }
+    if (a.entry_date) return -1
+    if (b.entry_date) return 1
+    return new Date(b.lastAdded).getTime() - new Date(a.lastAdded).getTime()
+  })
+
+  return trips
 }
 
 async function removeTrip(countryId: number): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
-
   const { error } = await supabase
     .from('checklist_items')
     .delete()
     .eq('user_id', user.id)
     .eq('country_id', countryId)
-
   if (error) throw new Error(error.message)
 }
 
@@ -84,12 +111,27 @@ async function removeVaccineFromChecklist(id: number): Promise<void> {
     .from('checklist_items')
     .delete()
     .eq('id', id)
+  if (error) throw new Error(error.message)
+}
 
+async function markVaccineReceived(params: { id: number; vaccineId: number }): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+  // Add to passport (ignore duplicate)
+  await supabase
+    .from('user_vaccines')
+    .insert({ user_id: user.id, vaccine_id: params.vaccineId })
+  // Remove from checklist
+  const { error } = await supabase
+    .from('checklist_items')
+    .delete()
+    .eq('id', params.id)
   if (error) throw new Error(error.message)
 }
 
 export default function ChecklistScreen() {
   const queryClient = useQueryClient()
+  const [checked, setChecked] = useState<Set<number>>(new Set())
 
   const { data: trips = [], isLoading } = useQuery<ChecklistTrip[]>({
     queryKey: ['checklist'],
@@ -108,6 +150,37 @@ export default function ChecklistScreen() {
       queryClient.invalidateQueries({ queryKey: ['checklistIds'] })
     },
   })
+
+  const markReceivedMutation = useMutation({
+    mutationFn: markVaccineReceived,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['checklist'] })
+      queryClient.invalidateQueries({ queryKey: ['checklistIds'] })
+      queryClient.invalidateQueries({ queryKey: ['passportIds'] })
+      queryClient.invalidateQueries({ queryKey: ['passport'] })
+    },
+  })
+
+  function handleCheckVaccine(item: ChecklistVaccine) {
+    // Optimistically mark checked
+    setChecked((prev) => new Set(prev).add(item.id))
+    // Short delay so user sees the checkmark before it disappears
+    setTimeout(() => {
+      markReceivedMutation.mutate(
+        { id: item.id, vaccineId: item.vaccine_id },
+        {
+          onError: () => {
+            setChecked((prev) => {
+              const next = new Set(prev)
+              next.delete(item.id)
+              return next
+            })
+            Alert.alert('Error', 'Could not mark vaccine as received.')
+          },
+        },
+      )
+    }, 400)
+  }
 
   function handleRemoveTrip(trip: ChecklistTrip) {
     Alert.alert(
@@ -150,38 +223,67 @@ export default function ChecklistScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.subtitle}>
-          Bring this list to your pharmacy or travel clinic.
+          Tap a checkbox when you've received a vaccine — it will move to your passport.
         </Text>
 
         {trips.map((trip) => (
           <View key={trip.country_id} style={styles.tripCard}>
             <View style={styles.tripHeader}>
-              <View>
+              <View style={styles.tripHeaderText}>
                 <Text style={styles.tripTitle}>Trip: {trip.country_name}</Text>
-                <Text style={styles.tripDate}>
-                  Last added: {new Date(trip.lastAdded).toLocaleDateString('en-US', {
-                    month: 'long', day: 'numeric', year: 'numeric',
-                  })}
-                </Text>
+                {trip.entry_date ? (
+                  <Text style={styles.tripDate}>
+                    Date of entry: {formatDate(trip.entry_date)}
+                  </Text>
+                ) : (
+                  <Text style={styles.tripDate}>
+                    Last added: {formatDate(trip.lastAdded)}
+                  </Text>
+                )}
+                {trip.entry_date && (
+                  <Text style={styles.dueNotice}>
+                    Get vaccinated by {dueDate(trip.entry_date)}
+                  </Text>
+                )}
               </View>
               <TouchableOpacity
                 onPress={() => handleRemoveTrip(trip)}
                 style={styles.deleteButton}
               >
-                <Text style={styles.deleteText}>🗑 Remove trip</Text>
+                <Text style={styles.deleteText}>🗑 Remove</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.vaccineList}>
-              {trip.vaccines.map((v) => (
-                <View key={v.id} style={styles.vaccineRow}>
-                  <Text style={styles.checkBox}>☐</Text>
-                  <Text style={styles.vaccineName}>{v.vaccine_name}</Text>
-                  <TouchableOpacity onPress={() => removeVaccineMutation.mutate(v.id)}>
-                    <Text style={styles.removeVaccine}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
+              {trip.vaccines.map((v) => {
+                const isChecked = checked.has(v.id)
+                return (
+                  <View key={v.id} style={[styles.vaccineRow, isChecked && styles.vaccineRowChecked]}>
+                    <TouchableOpacity
+                      onPress={() => !isChecked && handleCheckVaccine(v)}
+                      style={[styles.checkBox, isChecked && styles.checkBoxChecked]}
+                      activeOpacity={0.7}
+                    >
+                      {isChecked && <Text style={styles.checkMark}>✓</Text>}
+                    </TouchableOpacity>
+                    <View style={styles.vaccineInfo}>
+                      <Text style={[styles.vaccineName, isChecked && styles.vaccineNameChecked]}>
+                        {v.vaccine_name}
+                      </Text>
+                      {trip.entry_date && !isChecked && (
+                        <Text style={styles.vaccineDue}>
+                          Due by {dueDate(trip.entry_date)}
+                        </Text>
+                      )}
+                    </View>
+                    {!isChecked && (
+                      <TouchableOpacity onPress={() => removeVaccineMutation.mutate(v.id)}>
+                        <Text style={styles.removeVaccine}>✕</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )
+              })}
             </View>
           </View>
         ))}
@@ -198,7 +300,7 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
   },
   tripCard: {
     backgroundColor: colors.surface,
@@ -215,19 +317,41 @@ const styles = StyleSheet.create({
     backgroundColor: '#EEF2FF',
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    gap: spacing.sm,
   },
+  tripHeaderText: { flex: 1, gap: 3 },
   tripTitle: { ...typography.h3, color: colors.textPrimary },
-  tripDate: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  deleteButton: { paddingTop: 2 },
+  tripDate: { ...typography.caption, color: colors.textSecondary },
+  dueNotice: { ...typography.caption, color: colors.warning, fontWeight: '600' },
+  deleteButton: { paddingTop: 2, flexShrink: 0 },
   deleteText: { ...typography.caption, color: colors.error },
   vaccineList: { padding: spacing.md, gap: spacing.sm },
   vaccineRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    paddingVertical: spacing.xs,
   },
-  checkBox: { fontSize: 18, color: colors.textSecondary },
-  vaccineName: { ...typography.body, color: colors.textPrimary, flex: 1 },
+  vaccineRowChecked: { opacity: 0.5 },
+  checkBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  checkBoxChecked: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  checkMark: { color: '#fff', fontSize: 13, fontWeight: '700', lineHeight: 16 },
+  vaccineInfo: { flex: 1, gap: 2 },
+  vaccineName: { ...typography.body, color: colors.textPrimary },
+  vaccineNameChecked: { textDecorationLine: 'line-through', color: colors.textSecondary },
+  vaccineDue: { ...typography.caption, color: colors.textMuted },
   removeVaccine: { fontSize: 14, color: colors.textMuted, paddingHorizontal: 4 },
   empty: {
     flex: 1,

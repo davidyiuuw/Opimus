@@ -11,6 +11,7 @@ interface VaccineResultCardProps {
   isInPassport: boolean
   isOnChecklist: boolean
   administeredAt?: string | null
+  showDetails?: boolean
   onAddToPassport: () => void
   onAddToChecklist: () => void
   onUndo: () => void
@@ -53,6 +54,7 @@ function intervalToText(days: number): string {
 
 export function VaccineResultCard({
   group, isInPassport, isOnChecklist, administeredAt,
+  showDetails = true,
   onAddToPassport, onAddToChecklist, onUndo, onReport,
 }: VaccineResultCardProps) {
   const vaccine = group.vaccine
@@ -112,34 +114,36 @@ export function VaccineResultCard({
       </View>
 
       {/* ── Sources line ── */}
-      <View style={styles.sourcesRow}>
-        <Text style={styles.sourcesLabel}>Sources: </Text>
-        {group.sources.map((src, i) => {
-          const label = SOURCE_LABELS[src.source] ?? src.source
-          return (
-            <React.Fragment key={src.id}>
-              {i > 0 && <Text style={styles.sourceDot}> · </Text>}
-              {src.source_url ? (
-                <TouchableOpacity onPress={() => Linking.openURL(src.source_url!)}>
-                  <Text style={styles.sourceLink}>{label} ↗</Text>
-                </TouchableOpacity>
-              ) : (
-                <Text style={styles.sourcePlain}>{label}</Text>
-              )}
-            </React.Fragment>
-          )
-        })}
-      </View>
+      {showDetails && (
+        <View style={styles.sourcesRow}>
+          <Text style={styles.sourcesLabel}>Sources: </Text>
+          {group.sources.map((src, i) => {
+            const label = SOURCE_LABELS[src.source] ?? src.source
+            return (
+              <React.Fragment key={src.id}>
+                {i > 0 && <Text style={styles.sourceDot}> · </Text>}
+                {src.source_url ? (
+                  <TouchableOpacity onPress={() => Linking.openURL(src.source_url!)}>
+                    <Text style={styles.sourceLink}>{label} ↗</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={styles.sourcePlain}>{label}</Text>
+                )}
+              </React.Fragment>
+            )
+          })}
+        </View>
+      )}
 
       {/* ── Level badge + notes; undo inline when no discrepancy ── */}
-      <View style={showUndo && !group.hasDiscrepancy ? styles.levelRow : null}>
-        <Text style={[styles.levelLine, showUndo && !group.hasDiscrepancy && styles.levelLineFlex]}>
+      <View style={showUndo && (!showDetails || !group.hasDiscrepancy) ? styles.levelRow : null}>
+        <Text style={[styles.levelLine, showUndo && (!showDetails || !group.hasDiscrepancy) && styles.levelLineFlex]}>
           <Text style={[styles.inlineBadge, { color: levelStyle.text, backgroundColor: levelStyle.bg }]}>
             {' '}{levelStyle.label}{' '}
           </Text>
-          {primaryNotes ? '  ' + primaryNotes : ''}
+          {showDetails && primaryNotes ? '  ' + primaryNotes : ''}
         </Text>
-        {showUndo && !group.hasDiscrepancy && (
+        {showUndo && (!showDetails || !group.hasDiscrepancy) && (
           <TouchableOpacity onPress={onUndo} style={styles.undoInline}>
             <Text style={styles.undoText}>↩ Undo</Text>
           </TouchableOpacity>
@@ -147,14 +151,14 @@ export function VaccineResultCard({
       </View>
 
       {/* ── Booster interval ── */}
-      {boosterIntervalDays !== null && (
+      {showDetails && boosterIntervalDays !== null && (
         <Text style={styles.boosterInterval}>
           Revaccination recommended every {intervalToText(boosterIntervalDays)}
         </Text>
       )}
 
       {/* ── Discrepancy warning (undo inline at bottom-right of box) ── */}
-      {group.hasDiscrepancy && (
+      {showDetails && group.hasDiscrepancy && (
         <View style={styles.discrepancyBox}>
           <Text style={styles.discrepancyText}>
             ⚠ Sources disagree on the requirement level. Use your judgement or consult a travel doctor.

@@ -4,7 +4,8 @@ import {
   View, Text, TextInput, FlatList, Modal, ScrollView,
   TouchableOpacity, TouchableWithoutFeedback,
   KeyboardAvoidingView, Keyboard, Platform,
-  StyleSheet, ActivityIndicator, Share, NativeScrollEvent, NativeSyntheticEvent,
+  StyleSheet, ActivityIndicator, Share, Linking,
+  NativeScrollEvent, NativeSyntheticEvent,
 } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import DateTimePicker from '@react-native-community/datetimepicker'
@@ -140,7 +141,15 @@ export default function PlanScreen() {
 
   function handleSeeRequirements() {
     if (!selectedCountry) return
-    router.push(`/results/${selectedCountry.code}`)
+    router.push({
+      pathname: '/(tabs)/(search)/results/[country]',
+      params: {
+        country: selectedCountry.code,
+        ...(entryDate && !dateUnknown
+          ? { entryDate: entryDate.toISOString().split('T')[0] }
+          : {}),
+      },
+    })
   }
 
   function formatDate(date: Date): string {
@@ -359,7 +368,13 @@ export default function PlanScreen() {
               ItemSeparatorComponent={() => <View style={styles.separator} />}
               ListEmptyComponent={
                 <View style={styles.empty}>
-                  <Text style={styles.emptyText}>No countries found</Text>
+                  <Text style={styles.emptyTitle}>We don't have data for this destination yet</Text>
+                  <Text style={styles.emptyBody}>
+                    We're sorry — we're still expanding our coverage. For the most up-to-date vaccine recommendations, please visit the CDC Travelers' Health website.
+                  </Text>
+                  <TouchableOpacity onPress={() => Linking.openURL('https://wwwnc.cdc.gov/travel/')}>
+                    <Text style={styles.emptyLink}>Visit CDC Travelers' Health ↗</Text>
+                  </TouchableOpacity>
                 </View>
               }
             />
@@ -556,8 +571,10 @@ const styles = StyleSheet.create({
   countryName: { ...typography.body, color: colors.textPrimary, fontWeight: '600' },
   region: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
   separator: { height: 1, backgroundColor: colors.border, marginLeft: spacing.lg },
-  empty: { padding: spacing.lg },
-  emptyText: { ...typography.body, color: colors.textSecondary },
+  empty: { padding: spacing.lg, gap: spacing.sm },
+  emptyTitle: { ...typography.h3, color: colors.textPrimary },
+  emptyBody: { ...typography.body, color: colors.textSecondary },
+  emptyLink: { ...typography.body, color: colors.primary, fontWeight: '600', marginTop: spacing.xs },
   // Date modal
   dateModalContainer: { flex: 1, backgroundColor: colors.background },
   datePicker: { marginHorizontal: spacing.md },

@@ -2,7 +2,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import React from 'react'
 import {
   View, SectionList, Text, StyleSheet,
-  Alert, ActivityIndicator,
+  Alert, ActivityIndicator, TouchableOpacity, Linking,
 } from 'react-native'
 import { useLocalSearchParams, useNavigation } from 'expo-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -33,7 +33,7 @@ async function fetchRecommendations(countryCode: string): Promise<GroupedRecomme
     .eq('code', countryCode.toUpperCase())
     .single()
 
-  if (countryError || !country) throw new Error('Country not found')
+  if (countryError || !country) return { required: [], recommended: [], routine: [] }
 
   const { data, error } = await supabase
     .from('vaccine_recommendations')
@@ -92,7 +92,10 @@ async function fetchAdvisory(countryCode: string): Promise<TravelAdvisory | null
     .from('countries').select('id').eq('code', countryCode.toUpperCase()).single()
   if (!country) return null
   const { data } = await supabase
-    .from('travel_advisories').select('*').eq('country_id', country.id).maybeSingle()
+    .from('travel_advisories').select('*')
+    .eq('country_id', country.id)
+    .eq('source', 'state_dept')
+    .maybeSingle()
   return data ?? null
 }
 
@@ -106,6 +109,20 @@ async function fetchCountryId(countryCode: string): Promise<number | null> {
   const { data } = await supabase
     .from('countries').select('id').eq('code', countryCode.toUpperCase()).single()
   return data?.id ?? null
+}
+
+async function fetchPreferences(): Promise<{ detail_level: 'essential' | 'full' | null; risk_tolerance: 'all' | 'required_only' | null }> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { detail_level: null, risk_tolerance: null }
+  const { data } = await supabase
+    .from('users')
+    .select('detail_level, risk_tolerance')
+    .eq('id', user.id)
+    .single()
+  return {
+    detail_level: data?.detail_level ?? null,
+    risk_tolerance: data?.risk_tolerance ?? null,
+  }
 }
 
 async function fetchPassportIds(): Promise<{ vaccine_id: number; administered_at: string | null }[]> {
@@ -130,12 +147,17 @@ async function addToPassport(vaccineId: number): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
-async function addToChecklist(params: { vaccineId: number; countryId: number }): Promise<void> {
+async function addToChecklist(params: { vaccineId: number; countryId: number; entryDate?: string }): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
   const { error } = await supabase
     .from('checklist_items')
-    .insert({ user_id: user.id, country_id: params.countryId, vaccine_id: params.vaccineId })
+    .insert({
+      user_id: user.id,
+      country_id: params.countryId,
+      vaccine_id: params.vaccineId,
+      entry_date: params.entryDate ?? null,
+    })
   if (error && error.code !== '23505') throw new Error(error.message)
 }
 
@@ -170,7 +192,7 @@ async function reportDiscrepancy(params: { countryId: number; vaccineId: number 
 }
 
 export default function ResultsScreen() {
-  const { country } = useLocalSearchParams<{ country: string }>()
+  const { country, entryDate } = useLocalSearchParams<{ country: string; entryDate?: string }>()
   const queryClient = useQueryClient()
   const navigation = useNavigation()
 
@@ -179,7 +201,7 @@ export default function ResultsScreen() {
     queryFn: () => fetchCountryName(country),
   })
 
-  const { data: countryId } = useQuery({
+  const { data: countryId, isLoading: loadingCountryId } = useQuery({
     queryKey: ['countryId', country],
     queryFn: () => fetchCountryId(country),
   })
@@ -206,6 +228,11 @@ export default function ResultsScreen() {
   const { data: checklistIds = [] } = useQuery({
     queryKey: ['checklistIds', country],
     queryFn: () => fetchChecklistIds(country),
+  })
+
+  const { data: preferences } = useQuery({
+    queryKey: ['preferences'],
+    queryFn: fetchPreferences,
   })
 
   const addPassportMutation = useMutation({
@@ -282,7 +309,7 @@ export default function ResultsScreen() {
   const passportDates = new Map(passportIds.map((v) => [v.vaccine_id, v.administered_at]))
   const checklistVaccineIds = new Set(checklistIds.map((v) => v.vaccine_id))
 
-  if (loadingVaccines) {
+  if (loadingVaccines || loadingCountryId) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.primary} size="large" />
@@ -290,10 +317,13 @@ export default function ResultsScreen() {
     )
   }
 
+  const showDetails = preferences?.detail_level !== 'essential'
+  const hideRoutine = preferences?.risk_tolerance === 'required_only'
+
   const sections = [
     { title: 'Required', data: grouped?.required ?? [] },
     { title: 'Recommended', data: grouped?.recommended ?? [] },
-    { title: 'Routine', data: grouped?.routine ?? [] },
+    ...(!hideRoutine ? [{ title: 'Routine', data: grouped?.routine ?? [] }] : []),
   ].filter((s) => s.data.length > 0)
 
   return (
@@ -313,20 +343,34 @@ export default function ResultsScreen() {
             isInPassport={passportVaccineIds.has(item.vaccine_id)}
             isOnChecklist={checklistVaccineIds.has(item.vaccine_id)}
             administeredAt={passportDates.get(item.vaccine_id) ?? null}
+            showDetails={showDetails}
             onAddToPassport={() => addPassportMutation.mutate(item.vaccine_id)}
             onAddToChecklist={() => {
-              if (countryId) addChecklistMutation.mutate({ vaccineId: item.vaccine_id, countryId })
+              if (countryId) addChecklistMutation.mutate({ vaccineId: item.vaccine_id, countryId, entryDate: entryDate ?? undefined })
             }}
             onUndo={() => handleUndo(item.vaccine_id)}
             onReport={() => handleReport(item.vaccine_id)}
           />
         )}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>
-              No vaccine recommendations found for this destination.
-            </Text>
-          </View>
+          countryId == null ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>We don't have data for this destination yet</Text>
+              <Text style={styles.emptyBody}>
+                We're sorry — {countryName ?? 'this country'} isn't in our database yet. For the most up-to-date vaccine recommendations, please visit the CDC Travelers' Health website.
+              </Text>
+              <TouchableOpacity onPress={() => Linking.openURL('https://wwwnc.cdc.gov/travel/')}>
+                <Text style={styles.emptyLink}>Visit CDC Travelers' Health ↗</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>No vaccine recommendations</Text>
+              <Text style={styles.emptyBody}>
+                The CDC has no specific vaccine recommendations for {countryName ?? 'this destination'} beyond your routine vaccinations.
+              </Text>
+            </View>
+          )
         }
       />
     </SafeAreaView>
@@ -345,6 +389,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     paddingHorizontal: spacing.md,
   },
-  empty: { padding: spacing.lg },
-  emptyText: { ...typography.body, color: colors.textSecondary },
+  empty: { padding: spacing.lg, gap: spacing.sm },
+  emptyTitle: { ...typography.h3, color: colors.textPrimary },
+  emptyBody: { ...typography.body, color: colors.textSecondary },
+  emptyLink: { ...typography.body, color: colors.primary, fontWeight: '600', marginTop: spacing.xs },
 })

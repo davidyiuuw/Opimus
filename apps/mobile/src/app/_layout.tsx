@@ -13,7 +13,7 @@ const queryClient = new QueryClient({
 })
 
 function RootLayoutInner() {
-  const { session, isLoading, setSession, setLoading } = useAuthStore()
+  const { session, isLoading, setSession, setLoading, needsOnboarding, setNeedsOnboarding } = useAuthStore()
   const segments = useSegments()
   const router = useRouter()
 
@@ -32,20 +32,52 @@ function RootLayoutInner() {
     return () => subscription.unsubscribe()
   }, [setSession, setLoading])
 
-  // Redirect based on auth state once loading is done
+  // Fetch onboarding status after session is known
+  useEffect(() => {
+    if (isLoading) return
+    if (!session) {
+      setNeedsOnboarding(null)
+      return
+    }
+
+    supabase
+      .from('users')
+      .select('detail_level')
+      .eq('id', session.user.id)
+      .single()
+      .then(({ data }) => {
+        setNeedsOnboarding(data?.detail_level == null)
+      })
+  }, [session, isLoading])
+
+  // Redirect based on auth + onboarding state
   useEffect(() => {
     if (isLoading) return
 
     const inAuthGroup = segments[0] === '(auth)'
+    const inOnboarding = segments[0] === 'onboarding'
 
     if (!session && !inAuthGroup) {
       router.replace('/(auth)/sign-in')
-    } else if (session && inAuthGroup) {
-      router.replace('/(tabs)/home')
+      return
     }
-  }, [session, isLoading, segments, router])
 
-  if (isLoading) {
+    if (session) {
+      // Still checking onboarding status
+      if (needsOnboarding === null) return
+
+      if (needsOnboarding && !inOnboarding) {
+        router.replace('/onboarding')
+        return
+      }
+
+      if (!needsOnboarding && (inAuthGroup || inOnboarding)) {
+        router.replace('/(tabs)/home')
+      }
+    }
+  }, [session, isLoading, needsOnboarding, segments, router])
+
+  if (isLoading || (session && needsOnboarding === null)) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -57,6 +89,8 @@ function RootLayoutInner() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="(auth)" />
+      <Stack.Screen name="onboarding" />
+      <Stack.Screen name="preferences" options={{ headerShown: true, title: 'Preferences' }} />
       <Stack.Screen name="passport/upload" options={{ headerShown: true, title: 'Upload Proof' }} />
     </Stack>
   )

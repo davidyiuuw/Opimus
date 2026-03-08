@@ -1,0 +1,2 @@
+ALTER TABLE checklist_items
+  ADD COLUMN IF NOT EXISTS entry_date DATE DEFAULT NULL;
