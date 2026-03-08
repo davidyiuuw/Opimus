@@ -141,6 +141,10 @@ export default function PlanScreen() {
 
   function handleSeeRequirements() {
     if (!selectedCountry) return
+    AsyncStorage.setItem(
+      'lastSearchedCountry',
+      JSON.stringify({ code: selectedCountry.code, name: selectedCountry.name }),
+    )
     router.push({
       pathname: '/(tabs)/(search)/results/[country]',
       params: {

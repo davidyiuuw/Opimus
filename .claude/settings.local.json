@@ -29,7 +29,10 @@
       "Bash(pnpm --filter @opimus/scraper run-once:*)",
       "Bash(tee:*)",
       "Bash(echo:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(pnpm add:*)",
+      "Bash(/usr/local/lib/node_modules/pnpm/bin/pnpm.cjs add:*)",
+      "Bash(/usr/local/lib/node_modules/corepack/shims/pnpm add expo-video@~3.0.16 --filter @opimus/mobile)"
     ]
   }
 }
