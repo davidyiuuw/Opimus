@@ -5,6 +5,7 @@ import { router, useFocusEffect } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
 import { VideoView, useVideoPlayer } from 'expo-video'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { curatedPexelsVideos } from '../../config/curatedPexelsVideos'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../store/authStore'
 import { OpimusMenu } from '../../components/OpimusMenu'
@@ -31,25 +32,64 @@ async function fetchDisplayName(userId: string): Promise<string | null> {
   return data?.display_name ?? null
 }
 
+/** Pick the best file URL from a Pexels video object. */
+function bestFileUrl(v: any): string | null {
+  const files: any[] = v.video_files ?? []
+  const hd = files.find((f: any) => f.quality === 'hd' && f.width <= 1280)
+  const sd = files.find((f: any) => f.quality === 'sd')
+  const best = hd ?? sd
+  return best ? (best.link as string) : null
+}
+
+/** Fetch a single Pexels video by its numeric ID. Returns null on failure. */
+async function fetchVideoById(id: number): Promise<string | null> {
+  try {
+    const res = await fetch(`https://api.pexels.com/videos/videos/${id}`, {
+      headers: { Authorization: PEXELS_KEY! },
+    })
+    if (!res.ok) return null
+    return bestFileUrl(await res.json())
+  } catch {
+    return null
+  }
+}
+
 async function fetchPexelsVideos(countryName: string): Promise<string[]> {
   if (!PEXELS_KEY) return []
+
+  // 1. Collect curated IDs for this country (country-specific + global, deduped)
+  const countryIds = curatedPexelsVideos.byCountry[countryName] ?? []
+  const globalIds = curatedPexelsVideos.global
+  const curatedIds = [...new Set([...countryIds, ...globalIds])]
+
+  // 2. Fetch curated videos by ID in parallel
+  const curatedUrls = (
+    await Promise.all(curatedIds.map((id) => fetchVideoById(id)))
+  ).filter((url): url is string => url !== null)
+
+  // If curated list already fills the 5-video budget, skip the search entirely
+  if (curatedUrls.length >= 5) return curatedUrls.slice(0, 5)
+
+  // 3. Fill remaining slots with Pexels search results
+  const remaining = 5 - curatedUrls.length
   const query = encodeURIComponent(`${countryName} travel scenic`)
   try {
     const res = await fetch(
-      `https://api.pexels.com/videos/search?query=${query}&per_page=5&orientation=portrait`,
+      `https://api.pexels.com/videos/search?query=${query}&per_page=${remaining}&orientation=portrait`,
       { headers: { Authorization: PEXELS_KEY } },
     )
-    if (!res.ok) return []
+    if (!res.ok) return curatedUrls
     const json = await res.json()
-    return (json.videos ?? []).flatMap((v: any) => {
-      const files: any[] = v.video_files ?? []
-      const hd = files.find((f) => f.quality === 'hd' && f.width <= 1280)
-      const sd = files.find((f) => f.quality === 'sd')
-      const best = hd ?? sd
-      return best ? [best.link as string] : []
-    }).slice(0, 5)
+    const searchUrls = (json.videos ?? [])
+      .flatMap((v: any) => {
+        const url = bestFileUrl(v)
+        return url ? [url] : []
+      })
+      .slice(0, remaining) as string[]
+
+    return [...curatedUrls, ...searchUrls]
   } catch {
-    return []
+    return curatedUrls
   }
 }
 
