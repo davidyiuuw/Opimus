@@ -65,7 +65,7 @@ export default function OnboardingScreen() {
 
       if (error) throw new Error(error.message)
       setNeedsOnboarding(false)
-      router.replace('/(tabs)/home')
+      router.replace('/home')
     } catch (e: any) {
       Alert.alert('Error', e.message ?? 'Could not save preferences. Please try again.')
     } finally {

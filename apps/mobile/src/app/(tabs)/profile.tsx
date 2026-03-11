@@ -1,18 +1,24 @@
 import { SafeAreaView } from 'react-native-safe-area-context'
-import React, { useEffect, useState } from 'react'
-import { View, Text, StyleSheet, Alert, ActivityIndicator, TouchableOpacity } from 'react-native'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
+import { View, Text, ScrollView, StyleSheet, Alert, ActivityIndicator, TouchableOpacity, Dimensions, InteractionManager } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { useRouter } from 'expo-router'
+import { useRouter, useFocusEffect } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { UserProfile } from '@opimus/types'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
+import { OpimusMenu } from '../../components/OpimusMenu'
 import { colors } from '../../theme/colors'
 import { typography } from '../../theme/typography'
 import { spacing, borderRadius } from '../../theme/spacing'
 
+const NAV_BAR_HEIGHT = 56
+const INITIAL_SCROLL = { x: 0, y: NAV_BAR_HEIGHT }
+const WINDOW_HEIGHT = Dimensions.get('window').height
+
 export default function ProfileScreen() {
   const router = useRouter()
+  const scrollRef = useRef<ScrollView>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [displayName, setDisplayName] = useState('')
   const [saving, setSaving] = useState(false)
@@ -39,6 +45,19 @@ export default function ProfileScreen() {
     loadProfile()
   }, [])
 
+  const [scrollReady, setScrollReady] = useState(false)
+
+  useFocusEffect(
+    useCallback(() => {
+      setScrollReady(false)
+      const task = InteractionManager.runAfterInteractions(() => {
+        scrollRef.current?.scrollTo({ y: NAV_BAR_HEIGHT, animated: false })
+        setScrollReady(true)
+      })
+      return () => { task.cancel(); setScrollReady(false) }
+    }, []),
+  )
+
   async function handleSave() {
     if (!profile) return
     setSaving(true)
@@ -55,52 +74,66 @@ export default function ProfileScreen() {
     await supabase.auth.signOut()
   }
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    )
-  }
-
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <View style={styles.avatarSection}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {(profile?.display_name ?? '?')[0].toUpperCase()}
-            </Text>
-          </View>
-          <Text style={styles.email}>{supabase.auth['_session']?.user?.email ?? ''}</Text>
+      <ScrollView ref={scrollRef} contentOffset={INITIAL_SCROLL} alwaysBounceVertical contentContainerStyle={styles.scroll} style={{ opacity: scrollReady ? 1 : 0 }}>
+
+        {/* ── Opimus nav bar — hidden above fold, revealed on pull-down ── */}
+        <View style={styles.navBar}>
+          <View style={{ flex: 1 }} />
+          <OpimusMenu />
         </View>
 
-        <Input
-          label="Display Name"
-          value={displayName}
-          onChangeText={setDisplayName}
-          placeholder="Your name"
-        />
+        <Text style={styles.pageTitle}>Profile</Text>
 
-        <Button label="Save Changes" onPress={handleSave} loading={saving} />
+        {loading ? (
+          <ActivityIndicator color={colors.primary} style={styles.loader} />
+        ) : (
+          <View style={styles.content}>
+            <View style={styles.avatarSection}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {(profile?.display_name ?? '?')[0].toUpperCase()}
+                </Text>
+              </View>
+              <Text style={styles.email}>{supabase.auth['_session']?.user?.email ?? ''}</Text>
+            </View>
 
-        <TouchableOpacity style={styles.navRow} onPress={() => router.push('/preferences')} activeOpacity={0.7}>
-          <Text style={styles.navRowLabel}>Preferences</Text>
-          <Text style={styles.navRowChevron}>›</Text>
-        </TouchableOpacity>
+            <Input
+              label="Display Name"
+              value={displayName}
+              onChangeText={setDisplayName}
+              placeholder="Your name"
+            />
 
-        <View style={styles.spacer} />
+            <Button label="Save Changes" onPress={handleSave} loading={saving} />
 
-        <Button label="Sign Out" onPress={handleSignOut} variant="outline" />
-      </View>
+            <TouchableOpacity style={styles.navRow} onPress={() => router.push('/preferences')} activeOpacity={0.7}>
+              <Text style={styles.navRowLabel}>Preferences</Text>
+              <Text style={styles.navRowChevron}>›</Text>
+            </TouchableOpacity>
+
+            <Button label="Sign Out" onPress={handleSignOut} variant="outline" style={styles.signOut} />
+          </View>
+        )}
+
+      </ScrollView>
     </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { padding: spacing.lg, gap: spacing.md, flex: 1 },
+  scroll: { padding: spacing.md, paddingTop: 0, minHeight: WINDOW_HEIGHT + NAV_BAR_HEIGHT },
+  navBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: NAV_BAR_HEIGHT,
+    paddingHorizontal: spacing.sm,
+  },
+  pageTitle: { ...typography.h1, fontSize: 30, lineHeight: 38, color: colors.textPrimary, paddingHorizontal: spacing.sm, paddingBottom: spacing.sm, marginTop: spacing.lg },
+  loader: { marginTop: spacing.xl },
+  content: { padding: spacing.sm, gap: spacing.md },
   avatarSection: { alignItems: 'center', paddingVertical: spacing.lg, gap: spacing.sm },
   avatar: {
     width: 72, height: 72, borderRadius: 36,
@@ -122,5 +155,5 @@ const styles = StyleSheet.create({
   },
   navRowLabel: { ...typography.body, color: colors.textPrimary },
   navRowChevron: { fontSize: 22, color: colors.textMuted, lineHeight: 26 },
-  spacer: { flex: 1 },
+  signOut: { marginTop: spacing.sm },
 })

@@ -1,15 +1,15 @@
 import { SafeAreaView } from 'react-native-safe-area-context'
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import {
   View, Text, TextInput, FlatList, Modal, ScrollView,
   TouchableOpacity, TouchableWithoutFeedback,
-  KeyboardAvoidingView, Keyboard, Platform,
+  KeyboardAvoidingView, Keyboard, Platform, Dimensions, InteractionManager,
   StyleSheet, ActivityIndicator, Share, Linking,
   NativeScrollEvent, NativeSyntheticEvent,
 } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import DateTimePicker from '@react-native-community/datetimepicker'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../../lib/supabase'
 import { Button } from '../../../components/ui/Button'
@@ -51,10 +51,13 @@ async function fetchAllCountries(): Promise<Country[]> {
 }
 
 // Height of the Opimus nav bar that sits above the visible scroll area on mount
-const NAV_BAR_HEIGHT = 46
+const NAV_BAR_HEIGHT = 56
+const INITIAL_SCROLL = { x: 0, y: NAV_BAR_HEIGHT }
+const WINDOW_HEIGHT = Dimensions.get('window').height
 
 export default function PlanScreen() {
   const scrollRef = useRef<ScrollView>(null)
+  const [scrollReady, setScrollReady] = useState(false)
   const [countryModalVisible, setCountryModalVisible] = useState(false)
   const [dateModalVisible, setDateModalVisible] = useState(false)
   const [showUnknownModal, setShowUnknownModal] = useState(false)
@@ -66,13 +69,16 @@ export default function PlanScreen() {
   const [kids, setKids] = useState<Kid[]>([])
   const [dateUnknown, setDateUnknown] = useState(false)
 
-  // Start scrolled just past the Opimus nav bar so it's hidden until the user pulls down
-  useEffect(() => {
-    const t = setTimeout(() => {
-      scrollRef.current?.scrollTo({ y: NAV_BAR_HEIGHT, animated: false })
-    }, 50)
-    return () => clearTimeout(t)
-  }, [])
+  useFocusEffect(
+    useCallback(() => {
+      setScrollReady(false)
+      const task = InteractionManager.runAfterInteractions(() => {
+        scrollRef.current?.scrollTo({ y: NAV_BAR_HEIGHT, animated: false })
+        setScrollReady(true)
+      })
+      return () => { task.cancel(); setScrollReady(false) }
+    }, []),
+  )
 
   const { data: countries = [], isLoading } = useQuery<Country[]>({
     queryKey: ['countries'],
@@ -145,15 +151,10 @@ export default function PlanScreen() {
       'lastSearchedCountry',
       JSON.stringify({ code: selectedCountry.code, name: selectedCountry.name }),
     )
-    router.push({
-      pathname: '/(tabs)/(search)/results/[country]',
-      params: {
-        country: selectedCountry.code,
-        ...(entryDate && !dateUnknown
-          ? { entryDate: entryDate.toISOString().split('T')[0] }
-          : {}),
-      },
-    })
+    const dateQuery = entryDate && !dateUnknown
+      ? `?entryDate=${entryDate.toISOString().split('T')[0]}`
+      : ''
+    router.push(`/results/${selectedCountry.code}${dateQuery}`)
   }
 
   function formatDate(date: Date): string {
@@ -164,8 +165,11 @@ export default function PlanScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         ref={scrollRef}
+        contentOffset={INITIAL_SCROLL}
+        alwaysBounceVertical
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
+        style={{ opacity: scrollReady ? 1 : 0 }}
       >
         {/* ── Opimus nav bar — lives above the hero, revealed on pull-down ── */}
         <View style={styles.navBar}>
@@ -177,7 +181,7 @@ export default function PlanScreen() {
         <View style={styles.hero}>
           <Text style={styles.heading}>Make a plan to{'\n'}get protected</Text>
           <Text style={styles.subheading}>
-            Find what vaccines you need and plan your trip.
+            Find what vaccines you need before your trip.
           </Text>
         </View>
 
@@ -294,7 +298,7 @@ export default function PlanScreen() {
         <Button
           label="See Vaccine Requirements →"
           onPress={handleSeeRequirements}
-          disabled={!selectedCountry}
+          disabled={!selectedCountry || (!entryDate && !dateUnknown) || !travelers}
           style={styles.cta}
         />
 
@@ -421,14 +425,14 @@ export default function PlanScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  scroll: { padding: spacing.lg, paddingTop: spacing.sm, gap: spacing.lg },
+  scroll: { padding: spacing.lg, paddingTop: 0, gap: spacing.lg, minHeight: WINDOW_HEIGHT + NAV_BAR_HEIGHT },
   navBar: {
     flexDirection: 'row',
     alignItems: 'center',
     height: NAV_BAR_HEIGHT,
   },
   hero: { gap: spacing.sm, paddingBottom: spacing.sm },
-  heading: { fontSize: 36, fontWeight: '800', lineHeight: 44, color: colors.textPrimary },
+  heading: { fontSize: 36, fontWeight: '700', lineHeight: 44, color: colors.textPrimary },
   subheading: { ...typography.body, color: colors.textSecondary, lineHeight: 22 },
   section: { gap: spacing.sm },
   sectionLabel: {

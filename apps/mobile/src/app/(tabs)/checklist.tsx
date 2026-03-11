@@ -1,11 +1,13 @@
 import { SafeAreaView } from 'react-native-safe-area-context'
-import React, { useState } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Alert,
+  StyleSheet, ActivityIndicator, Alert, Dimensions, InteractionManager,
 } from 'react-native'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useFocusEffect } from 'expo-router'
 import { supabase } from '../../lib/supabase'
+import { OpimusMenu } from '../../components/OpimusMenu'
 import { colors } from '../../theme/colors'
 import { typography } from '../../theme/typography'
 import { borderRadius, spacing } from '../../theme/spacing'
@@ -27,6 +29,9 @@ interface ChecklistTrip {
 }
 
 const DUE_LEAD_DAYS = 28 // 4 weeks before travel
+const NAV_BAR_HEIGHT = 56
+const INITIAL_SCROLL = { x: 0, y: NAV_BAR_HEIGHT }
+const WINDOW_HEIGHT = Dimensions.get('window').height
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', {
@@ -131,12 +136,25 @@ async function markVaccineReceived(params: { id: number; vaccineId: number }): P
 
 export default function ChecklistScreen() {
   const queryClient = useQueryClient()
+  const scrollRef = useRef<ScrollView>(null)
   const [checked, setChecked] = useState<Set<number>>(new Set())
+  const [scrollReady, setScrollReady] = useState(false)
 
   const { data: trips = [], isLoading } = useQuery<ChecklistTrip[]>({
     queryKey: ['checklist'],
     queryFn: fetchChecklist,
   })
+
+  useFocusEffect(
+    useCallback(() => {
+      setScrollReady(false)
+      const task = InteractionManager.runAfterInteractions(() => {
+        scrollRef.current?.scrollTo({ y: NAV_BAR_HEIGHT, animated: false })
+        setScrollReady(true)
+      })
+      return () => { task.cancel(); setScrollReady(false) }
+    }, []),
+  )
 
   const removeTripMutation = useMutation({
     mutationFn: removeTrip,
@@ -162,9 +180,7 @@ export default function ChecklistScreen() {
   })
 
   function handleCheckVaccine(item: ChecklistVaccine) {
-    // Optimistically mark checked
     setChecked((prev) => new Set(prev).add(item.id))
-    // Short delay so user sees the checkmark before it disappears
     setTimeout(() => {
       markReceivedMutation.mutate(
         { id: item.id, vaccineId: item.vaccine_id },
@@ -197,96 +213,98 @@ export default function ChecklistScreen() {
     )
   }
 
-  if (isLoading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    )
-  }
-
-  if (trips.length === 0) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>📋</Text>
-          <Text style={styles.emptyTitle}>No vaccines on your checklist</Text>
-          <Text style={styles.emptyBody}>
-            Search for a destination and tap "Add to my checklist" to build your pre-travel vaccine list.
-          </Text>
-        </View>
-      </SafeAreaView>
-    )
-  }
-
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.subtitle}>
-          Tap a checkbox when you've received a vaccine — it will move to your passport.
-        </Text>
+      <ScrollView ref={scrollRef} contentOffset={INITIAL_SCROLL} alwaysBounceVertical contentContainerStyle={styles.scroll} style={{ opacity: scrollReady ? 1 : 0 }}>
 
-        {trips.map((trip) => (
-          <View key={trip.country_id} style={styles.tripCard}>
-            <View style={styles.tripHeader}>
-              <View style={styles.tripHeaderText}>
-                <Text style={styles.tripTitle}>Trip: {trip.country_name}</Text>
-                {trip.entry_date ? (
-                  <Text style={styles.tripDate}>
-                    Date of entry: {formatDate(trip.entry_date)}
-                  </Text>
-                ) : (
-                  <Text style={styles.tripDate}>
-                    Last added: {formatDate(trip.lastAdded)}
-                  </Text>
-                )}
-                {trip.entry_date && (
-                  <Text style={styles.dueNotice}>
-                    Get vaccinated by {dueDate(trip.entry_date)}
-                  </Text>
-                )}
-              </View>
-              <TouchableOpacity
-                onPress={() => handleRemoveTrip(trip)}
-                style={styles.deleteButton}
-              >
-                <Text style={styles.deleteText}>🗑 Remove</Text>
-              </TouchableOpacity>
-            </View>
+        {/* ── Opimus nav bar — hidden above fold, revealed on pull-down ── */}
+        <View style={styles.navBar}>
+          <View style={{ flex: 1 }} />
+          <OpimusMenu />
+        </View>
 
-            <View style={styles.vaccineList}>
-              {trip.vaccines.map((v) => {
-                const isChecked = checked.has(v.id)
-                return (
-                  <View key={v.id} style={[styles.vaccineRow, isChecked && styles.vaccineRowChecked]}>
-                    <TouchableOpacity
-                      onPress={() => !isChecked && handleCheckVaccine(v)}
-                      style={[styles.checkBox, isChecked && styles.checkBoxChecked]}
-                      activeOpacity={0.7}
-                    >
-                      {isChecked && <Text style={styles.checkMark}>✓</Text>}
-                    </TouchableOpacity>
-                    <View style={styles.vaccineInfo}>
-                      <Text style={[styles.vaccineName, isChecked && styles.vaccineNameChecked]}>
-                        {v.vaccine_name}
+        <Text style={styles.pageTitle}>My Checklist</Text>
+
+        {isLoading ? (
+          <ActivityIndicator color={colors.primary} style={styles.loader} />
+        ) : trips.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyIcon}>📋</Text>
+            <Text style={styles.emptyTitle}>No vaccines on your checklist</Text>
+            <Text style={styles.emptyBody}>
+              Search for a destination and tap "Add to my checklist" to build your pre-travel vaccine list.
+            </Text>
+          </View>
+        ) : (
+          <>
+            <Text style={styles.subtitle}>
+              Tap a checkbox when you've received a vaccine — it will move to your passport.
+            </Text>
+
+            {trips.map((trip) => (
+              <View key={trip.country_id} style={styles.tripCard}>
+                <View style={styles.tripHeader}>
+                  <View style={styles.tripHeaderText}>
+                    <Text style={styles.tripTitle}>Trip: {trip.country_name}</Text>
+                    {trip.entry_date ? (
+                      <Text style={styles.tripDate}>
+                        Date of entry: {formatDate(trip.entry_date)}
                       </Text>
-                      {trip.entry_date && !isChecked && (
-                        <Text style={styles.vaccineDue}>
-                          Due by {dueDate(trip.entry_date)}
-                        </Text>
-                      )}
-                    </View>
-                    {!isChecked && (
-                      <TouchableOpacity onPress={() => removeVaccineMutation.mutate(v.id)}>
-                        <Text style={styles.removeVaccine}>✕</Text>
-                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.tripDate}>
+                        Last added: {formatDate(trip.lastAdded)}
+                      </Text>
+                    )}
+                    {trip.entry_date && (
+                      <Text style={styles.dueNotice}>
+                        Get vaccinated by {dueDate(trip.entry_date)}
+                      </Text>
                     )}
                   </View>
-                )
-              })}
-            </View>
-          </View>
-        ))}
+                  <TouchableOpacity
+                    onPress={() => handleRemoveTrip(trip)}
+                    style={styles.deleteButton}
+                  >
+                    <Text style={styles.deleteText}>🗑 Remove</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.vaccineList}>
+                  {trip.vaccines.map((v) => {
+                    const isChecked = checked.has(v.id)
+                    return (
+                      <View key={v.id} style={[styles.vaccineRow, isChecked && styles.vaccineRowChecked]}>
+                        <TouchableOpacity
+                          onPress={() => !isChecked && handleCheckVaccine(v)}
+                          style={[styles.checkBox, isChecked && styles.checkBoxChecked]}
+                          activeOpacity={0.7}
+                        >
+                          {isChecked && <Text style={styles.checkMark}>✓</Text>}
+                        </TouchableOpacity>
+                        <View style={styles.vaccineInfo}>
+                          <Text style={[styles.vaccineName, isChecked && styles.vaccineNameChecked]}>
+                            {v.vaccine_name}
+                          </Text>
+                          {trip.entry_date && !isChecked && (
+                            <Text style={styles.vaccineDue}>
+                              Due by {dueDate(trip.entry_date)}
+                            </Text>
+                          )}
+                        </View>
+                        {!isChecked && (
+                          <TouchableOpacity onPress={() => removeVaccineMutation.mutate(v.id)}>
+                            <Text style={styles.removeVaccine}>✕</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    )
+                  })}
+                </View>
+              </View>
+            ))}
+          </>
+        )}
+
       </ScrollView>
     </SafeAreaView>
   )
@@ -294,8 +312,15 @@ export default function ChecklistScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  scroll: { padding: spacing.md, gap: spacing.md },
+  scroll: { padding: spacing.md, paddingTop: 0, gap: spacing.md, minHeight: WINDOW_HEIGHT + NAV_BAR_HEIGHT },
+  navBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: NAV_BAR_HEIGHT,
+    paddingHorizontal: spacing.sm,
+  },
+  pageTitle: { ...typography.h1, fontSize: 30, lineHeight: 38, color: colors.textPrimary, paddingHorizontal: spacing.sm, paddingBottom: spacing.xs, marginTop: spacing.sm },
+  loader: { marginTop: spacing.xl },
   subtitle: {
     ...typography.bodySmall,
     color: colors.textSecondary,
@@ -354,11 +379,10 @@ const styles = StyleSheet.create({
   vaccineDue: { ...typography.caption, color: colors.textMuted },
   removeVaccine: { fontSize: 14, color: colors.textMuted, paddingHorizontal: 4 },
   empty: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
     padding: spacing.xl,
     gap: spacing.md,
+    marginTop: spacing.xl,
   },
   emptyIcon: { fontSize: 48 },
   emptyTitle: { ...typography.h2, color: colors.textPrimary, textAlign: 'center' },

@@ -82,7 +82,7 @@ export function OpimusMenu({ tint = 'dark' }: OpimusMenuProps) {
             style={[styles.card, { top: Platform.OS === 'ios' ? 96 : 72 }]}
             onStartShouldSetResponder={() => true}
           >
-            <TouchableOpacity style={styles.item} onPress={() => go('/(tabs)/home')}>
+            <TouchableOpacity style={styles.item} onPress={() => go('/home')}>
               <Ionicons name="home-outline" size={18} color={colors.textSecondary} style={styles.icon} />
               <Text style={styles.itemLabel}>Home</Text>
               <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
@@ -116,19 +116,19 @@ const styles = StyleSheet.create({
   trigger: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: spacing.sm,
   },
   // Flat-left pill body
   pillBody: {
     height: PILL_H,
-    paddingHorizontal: 11,
+    paddingLeft: 10,
+    paddingRight: 6,
     justifyContent: 'center',
     borderTopLeftRadius: 5,
     borderBottomLeftRadius: 5,
   },
   pillText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
