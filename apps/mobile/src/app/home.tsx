@@ -17,8 +17,6 @@ import { borderRadius, spacing } from '../theme/spacing'
 const PEXELS_KEY = process.env.EXPO_PUBLIC_PEXELS_API_KEY
 const VIDEO_DURATION_MS = 10000
 const CROSSFADE_MS = 600
-const FADE_OUT_MS = 2000
-const FADE_IN_MS = 600
 
 function getGreeting(): string {
   const hour = new Date().getHours()
@@ -189,34 +187,19 @@ export default function HomeScreen() {
       videoIndexRef.current = nextIdx
       activeSlot.current = next
 
-      if (nextIdx === 0) {
-        // ── End of all clips: fade to black, then restart ──
-        Animated.parallel([
-          Animated.timing(opacityA, { toValue: 0, duration: FADE_OUT_MS, useNativeDriver: true }),
-          Animated.timing(opacityB, { toValue: 0, duration: FADE_OUT_MS, useNativeDriver: true }),
-        ]).start(() => {
-          activeSlot.current = 'A'
-          videoIndexRef.current = 0
-          playerA.replace({ uri: videoUrls[0] })
-          playerA.play()
-          Animated.timing(opacityA, { toValue: 1, duration: FADE_IN_MS, useNativeDriver: true }).start()
-          opacityB.setValue(0)
-          if (videoUrls.length > 1) playerB.replace({ uri: videoUrls[1] })
-        })
-      } else {
-        // ── Normal switch: next clip was already buffered, cross-fade in ──
-        playerFor(next).play()
-        Animated.timing(opacityFor(next), {
-          toValue: 1, duration: CROSSFADE_MS, useNativeDriver: true,
+      // Cross-fade to the pre-buffered next clip (wraps seamlessly back to first)
+      playerFor(next).play()
+      Animated.timing(opacityFor(next), {
+        toValue: 1, duration: CROSSFADE_MS, useNativeDriver: true,
+      }).start(() => {
+        Animated.timing(opacityFor(cur), {
+          toValue: 0, duration: 300, useNativeDriver: true,
         }).start(() => {
-          Animated.timing(opacityFor(cur), {
-            toValue: 0, duration: 300, useNativeDriver: true,
-          }).start(() => {
-            // Preload the clip after next into the now-hidden slot
-            playerFor(cur).replace({ uri: videoUrls[afterNextIdx] })
-          })
+          // Preload the clip after next; pause so it doesn't play ahead while hidden
+          playerFor(cur).replace({ uri: videoUrls[afterNextIdx] })
+          playerFor(cur).pause()
         })
-      }
+      })
     }, VIDEO_DURATION_MS)
 
     return () => clearInterval(timer)

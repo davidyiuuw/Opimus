@@ -22,7 +22,7 @@ export const curatedPexelsVideos: {
   global: number[]
 } = {
   byCountry: {
-    'Costa Rica': [7722579, 8545189, 11934554, 4280455, 8921025, 3986257, 6981342, 2932301],
+    'Costa Rica': [7722579, 8545189, 11934554, 4280455, 8921025, 3986257, 6981342, 8938337],
   },
 
   // Shown for any country without a specific entry.
