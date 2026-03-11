@@ -2,7 +2,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import React, { useState, useRef, useCallback } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Alert, Dimensions, InteractionManager,
+  StyleSheet, ActivityIndicator, Alert, Dimensions, InteractionManager, Share,
 } from 'react-native'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useFocusEffect } from 'expo-router'
@@ -198,6 +198,52 @@ export default function ChecklistScreen() {
     }, 400)
   }
 
+  async function handleShareTrip(trip: ChecklistTrip) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        Alert.alert('Sign in required', 'Please sign in to share your checklist.')
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('checklist_shares')
+        .insert({
+          country_id: trip.country_id,
+          country_name: trip.country_name,
+          country_code: trip.country_code,
+          entry_date: trip.entry_date ?? null,
+          vaccines: trip.vaccines.map(v => ({ vaccine_id: v.vaccine_id, vaccine_name: v.vaccine_name })),
+          created_by: user.id,
+        })
+        .select('id')
+        .single()
+
+      if (error || !data) {
+        Alert.alert('Error', 'Could not create shareable link.')
+        return
+      }
+
+      const shareUrl = `https://opimus.app/share/${data.id}`
+
+      const vaccineLines = trip.vaccines.map(v => `• ${v.vaccine_name}`).join('\n')
+      const dateLines = trip.entry_date
+        ? `📅 Travel date: ${formatDate(trip.entry_date)}\n⏰ Get vaccinated by: ${dueDate(trip.entry_date)}\n\n`
+        : ''
+
+      const message =
+        `🌍 Vaccine Checklist — ${trip.country_name}\n` +
+        dateLines +
+        `Vaccines needed:\n${vaccineLines}\n\n` +
+        `Tap to add to your Opimus checklist:\n${shareUrl}\n\n` +
+        `— Shared via Opimus · Travel Vaccination Planner`
+
+      Share.share({ message, title: 'My Vaccine Checklist' })
+    } catch {
+      Alert.alert('Error', 'Something went wrong. Please try again.')
+    }
+  }
+
   function handleRemoveTrip(trip: ChecklistTrip) {
     Alert.alert(
       `Remove trip to ${trip.country_name}?`,
@@ -261,12 +307,20 @@ export default function ChecklistScreen() {
                       </Text>
                     )}
                   </View>
-                  <TouchableOpacity
-                    onPress={() => handleRemoveTrip(trip)}
-                    style={styles.deleteButton}
-                  >
-                    <Text style={styles.deleteText}>🗑 Remove</Text>
-                  </TouchableOpacity>
+                  <View style={styles.tripActions}>
+                    <TouchableOpacity
+                      onPress={() => handleShareTrip(trip)}
+                      style={styles.shareButton}
+                    >
+                      <Text style={styles.shareText}>⬆ Share</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleRemoveTrip(trip)}
+                      style={styles.deleteButton}
+                    >
+                      <Text style={styles.deleteText}>🗑 Remove</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 <View style={styles.vaccineList}>
@@ -348,6 +402,9 @@ const styles = StyleSheet.create({
   tripTitle: { ...typography.h3, color: colors.textPrimary },
   tripDate: { ...typography.caption, color: colors.textSecondary },
   dueNotice: { ...typography.caption, color: colors.warning, fontWeight: '600' },
+  tripActions: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start', flexShrink: 0 },
+  shareButton: { paddingTop: 2 },
+  shareText: { ...typography.caption, color: colors.primary },
   deleteButton: { paddingTop: 2, flexShrink: 0 },
   deleteText: { ...typography.caption, color: colors.error },
   vaccineList: { padding: spacing.md, gap: spacing.sm },

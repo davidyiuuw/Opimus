@@ -103,6 +103,7 @@ function RootLayoutInner() {
       <Stack.Screen name="onboarding" />
       <Stack.Screen name="preferences" options={{ headerShown: true, title: 'Preferences' }} />
       <Stack.Screen name="passport/upload" options={{ headerShown: true, title: 'Upload Proof' }} />
+      <Stack.Screen name="share/[id]" options={{ headerShown: true, title: 'Shared Checklist' }} />
     </Stack>
   )
 }
