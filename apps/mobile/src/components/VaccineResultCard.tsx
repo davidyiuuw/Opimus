@@ -1,6 +1,6 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { View, Text, TouchableOpacity, Linking, StyleSheet } from 'react-native'
-import { VaccineGroup, RecommendationLevel } from '@opimus/types'
+import { VaccineGroup, VaccineQuestion, RecommendationLevel } from '@opimus/types'
 import { colors } from '../theme/colors'
 import { typography } from '../theme/typography'
 import { borderRadius, spacing } from '../theme/spacing'
@@ -12,6 +12,7 @@ interface VaccineResultCardProps {
   isOnChecklist: boolean
   administeredAt?: string | null
   showDetails?: boolean
+  userAge?: number | null
   onAddToPassport: () => void
   onAddToChecklist: () => void
   onUndo: () => void
@@ -25,11 +26,13 @@ const SOURCE_LABELS: Record<string, string> = {
   WHO: 'WHO',
 }
 
-const LEVEL_STYLE: Record<RecommendationLevel, { bg: string; text: string; label: string }> = {
-  required:        { bg: '#FFEBEE', text: '#C62828', label: 'Required' },
-  recommended:     { bg: '#FFF3E0', text: '#E65100', label: 'Recommended' },
-  routine:         { bg: '#E3F2FD', text: '#1565C0', label: 'Routine' },
-  not_recommended: { bg: '#F5F5F5', text: '#757575', label: 'Not recommended' },
+const LEVEL_STYLE: Record<string, { bg: string; text: string; label: string }> = {
+  required:           { bg: '#FFEBEE', text: '#C62828', label: 'Required' },
+  recommended:        { bg: '#FFF3E0', text: '#E65100', label: 'Recommended' },
+  highly_recommended: { bg: '#FBE9E7', text: '#BF360C', label: 'Highly Recommended' },
+  optional:           { bg: '#F5F5F5', text: '#757575', label: 'Optional' },
+  routine:            { bg: '#E3F2FD', text: '#1565C0', label: 'Routine' },
+  not_recommended:    { bg: '#F5F5F5', text: '#757575', label: 'Not recommended' },
 }
 
 function stripLevelPrefix(notes: string, label: string): string {
@@ -54,19 +57,29 @@ function intervalToText(days: number): string {
 
 export function VaccineResultCard({
   group, isInPassport, isOnChecklist, administeredAt,
-  showDetails = true,
+  showDetails = true, userAge,
   onAddToPassport, onAddToChecklist, onUndo, onReport,
 }: VaccineResultCardProps) {
+  const [answer, setAnswer] = useState<'yes' | 'no' | null>(null)
+
   const vaccine = group.vaccine
   const disease = vaccine?.disease
-  const levelStyle = LEVEL_STYLE[group.primaryLevel]
+  const question: VaccineQuestion | undefined = group.question
+
+  // Resolve display level based on question answer
+  const displayLevel: string = answer === 'yes'
+    ? (question?.yes_level ?? group.primaryLevel)
+    : answer === 'no'
+      ? (question?.no_level ?? group.primaryLevel)
+      : group.primaryLevel
+
+  const levelStyle = LEVEL_STYLE[displayLevel] ?? LEVEL_STYLE['recommended']
   const rawNotes = group.sources.find((s) => s.notes)?.notes ?? null
 
-  // Routine always uses the canonical message; other levels strip redundant level prefix
   const primaryNotes = group.primaryLevel === 'routine'
     ? 'All travelers should be up-to-date on all routine vaccines.'
     : rawNotes && (group.primaryLevel === 'required' || group.primaryLevel === 'recommended')
-      ? stripLevelPrefix(rawNotes, levelStyle.label)
+      ? stripLevelPrefix(rawNotes, LEVEL_STYLE[group.primaryLevel]?.label ?? '')
       : rawNotes
 
   // Booster / up-to-date logic
@@ -77,6 +90,10 @@ export function VaccineResultCard({
     && (Date.now() - new Date(administeredAt).getTime()) >= boosterIntervalDays * 24 * 60 * 60 * 1000
   const isUpToDate = isInPassport && !needsBooster
 
+  // Age eligibility
+  const minAge = vaccine?.min_age_years ?? null
+  const isAgeIneligible = userAge != null && minAge != null && userAge < minAge
+
   const cardStyle = needsBooster
     ? styles.cardBoosterDue
     : isUpToDate
@@ -86,6 +103,10 @@ export function VaccineResultCard({
         : null
 
   const showUndo = isInPassport || isOnChecklist
+
+  function toggleAnswer(picked: 'yes' | 'no') {
+    setAnswer((prev) => (prev === picked ? null : picked))
+  }
 
   return (
     <View style={[styles.card, cardStyle]}>
@@ -150,6 +171,30 @@ export function VaccineResultCard({
         )}
       </View>
 
+      {/* ── Contextual question ── */}
+      {question && showDetails && (
+        <View style={styles.questionBox}>
+          <Text style={styles.questionText}>{question.question_text}</Text>
+          <View style={styles.toggleRow}>
+            <TouchableOpacity
+              onPress={() => toggleAnswer('yes')}
+              style={[styles.toggleBtn, answer === 'yes' && styles.toggleBtnYes]}
+            >
+              <Text style={[styles.toggleBtnText, answer === 'yes' && styles.toggleBtnTextActive]}>Yes</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => toggleAnswer('no')}
+              style={[styles.toggleBtn, answer === 'no' && styles.toggleBtnNo]}
+            >
+              <Text style={[styles.toggleBtnText, answer === 'no' && styles.toggleBtnTextActive]}>No</Text>
+            </TouchableOpacity>
+          </View>
+          {answer === 'yes' && (
+            <Text style={styles.questionReasoning}>{question.yes_reasoning}</Text>
+          )}
+        </View>
+      )}
+
       {/* ── Booster interval ── */}
       {showDetails && boosterIntervalDays !== null && (
         <Text style={styles.boosterInterval}>
@@ -157,7 +202,7 @@ export function VaccineResultCard({
         </Text>
       )}
 
-      {/* ── Discrepancy warning (undo inline at bottom-right of box) ── */}
+      {/* ── Discrepancy warning ── */}
       {showDetails && group.hasDiscrepancy && (
         <View style={styles.discrepancyBox}>
           <Text style={styles.discrepancyText}>
@@ -176,8 +221,17 @@ export function VaccineResultCard({
         </View>
       )}
 
-      {/* ── Action buttons (only when not yet selected) ── */}
-      {!isInPassport && !isOnChecklist && (
+      {/* ── Age ineligibility notice ── */}
+      {isAgeIneligible && (
+        <View style={styles.ageNotice}>
+          <Text style={styles.ageNoticeText}>
+            ⚠ This vaccine is approved for ages {minAge}+. Based on the date of birth in your profile, you may not be eligible. Please consult your healthcare provider.
+          </Text>
+        </View>
+      )}
+
+      {/* ── Action buttons (only when not yet selected and age-eligible) ── */}
+      {!isInPassport && !isOnChecklist && !isAgeIneligible && (
         <>
           <Button
             label="I already got this vaccine"
@@ -286,4 +340,49 @@ const styles = StyleSheet.create({
   },
   reportLink: { ...typography.caption, color: colors.primary, fontWeight: '600' },
   btn: { marginTop: 0 },
+  // Contextual question
+  questionBox: {
+    backgroundColor: '#F0F4FF',
+    borderRadius: borderRadius.sm,
+    padding: spacing.sm,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#C7D7F5',
+  },
+  questionText: { ...typography.bodySmall, color: colors.textPrimary, fontWeight: '600' },
+  toggleRow: { flexDirection: 'row', gap: spacing.sm },
+  toggleBtn: {
+    flex: 1,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+  },
+  toggleBtnYes: {
+    borderColor: '#BF360C',
+    backgroundColor: '#FBE9E7',
+  },
+  toggleBtnNo: {
+    borderColor: colors.border,
+    backgroundColor: '#F5F5F5',
+  },
+  toggleBtnText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
+  toggleBtnTextActive: { color: colors.textPrimary },
+  questionReasoning: {
+    ...typography.bodySmall,
+    color: '#BF360C',
+    fontStyle: 'italic',
+    lineHeight: 20,
+  },
+  // Age ineligibility
+  ageNotice: {
+    backgroundColor: '#FFF8E1',
+    borderRadius: borderRadius.sm,
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#FFE082',
+  },
+  ageNoticeText: { ...typography.bodySmall, color: '#7B5800' },
 })

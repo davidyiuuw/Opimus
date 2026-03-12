@@ -16,6 +16,9 @@ export interface Vaccine {
   doses: number
   notes: string | null
   booster_interval_days: number | null
+  min_age_years: number | null
+  due_lead_days: number | null
+  best_lead_days: number | null
 }
 
 export interface VaccineRecommendation {
@@ -30,6 +33,17 @@ export interface VaccineRecommendation {
   last_synced_at: string
 }
 
+// Contextual question shown on a vaccine card for a specific country
+export interface VaccineQuestion {
+  id: number
+  country_id: number
+  vaccine_id: number
+  question_text: string
+  yes_level: string   // e.g. 'highly_recommended'
+  no_level: string    // e.g. 'optional'
+  yes_reasoning: string
+}
+
 // One vaccine grouped across all sources (CDC, country gov, WHO, etc.)
 export interface VaccineGroup {
   vaccine_id: number
@@ -37,6 +51,7 @@ export interface VaccineGroup {
   primaryLevel: RecommendationLevel  // most restrictive level across all sources
   sources: VaccineRecommendation[]   // one entry per source
   hasDiscrepancy: boolean            // true when sources disagree on level
+  question?: VaccineQuestion         // contextual question for this country, if any
 }
 
 export interface GroupedRecommendations {

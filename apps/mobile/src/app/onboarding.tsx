@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native'
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Platform } from 'react-native'
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import { useRouter } from 'expo-router'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
@@ -38,14 +39,25 @@ function OptionCard({ label, description, selected, onPress }: OptionCardProps) 
   )
 }
 
+function formatDob(date: Date): string {
+  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+}
+
 export default function OnboardingScreen() {
   const router = useRouter()
   const setNeedsOnboarding = useAuthStore((s) => s.setNeedsOnboarding)
   const [detailLevel, setDetailLevel] = useState<DetailLevel | null>(null)
   const [riskTolerance, setRiskTolerance] = useState<RiskTolerance | null>(null)
+  const [dateOfBirth, setDateOfBirth] = useState<Date | null>(null)
+  const [showDobPicker, setShowDobPicker] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const canSubmit = detailLevel !== null && riskTolerance !== null
+
+  function handleDobChange(_event: DateTimePickerEvent, date?: Date) {
+    if (Platform.OS === 'android') setShowDobPicker(false)
+    if (date) setDateOfBirth(date)
+  }
 
   async function handleGetStarted() {
     if (!canSubmit) return
@@ -59,6 +71,7 @@ export default function OnboardingScreen() {
         .update({
           detail_level: detailLevel,
           risk_tolerance: riskTolerance,
+          date_of_birth: dateOfBirth ? dateOfBirth.toISOString().split('T')[0] : null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', user.id)
@@ -82,7 +95,7 @@ export default function OnboardingScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Personalise your experience</Text>
         <Text style={styles.subtitle}>
-          Answer two quick questions so we can tailor your vaccine recommendations.
+          Answer a few quick questions so we can tailor your vaccine recommendations.
         </Text>
       </View>
 
@@ -120,6 +133,49 @@ export default function OnboardingScreen() {
         />
       </View>
 
+      {/* Date of birth (optional) */}
+      <View style={styles.section}>
+        <Text style={styles.question}>Date of birth <Text style={styles.optional}>(optional)</Text></Text>
+        <Text style={styles.dobHint}>
+          Helps us flag age-specific vaccine eligibility and identify if you or a family member may be at higher risk for certain diseases.
+        </Text>
+        <TouchableOpacity
+          style={[styles.dobButton, dateOfBirth && styles.dobButtonFilled]}
+          onPress={() => setShowDobPicker(true)}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.dobButtonText, dateOfBirth && styles.dobButtonTextFilled]}>
+            {dateOfBirth ? formatDob(dateOfBirth) : 'Tap to set date of birth'}
+          </Text>
+          {dateOfBirth && (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation(); setDateOfBirth(null); setShowDobPicker(false) }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.dobClear}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </TouchableOpacity>
+
+        {showDobPicker && (
+          <>
+            <DateTimePicker
+              value={dateOfBirth ?? new Date(1990, 0, 1)}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={handleDobChange}
+              maximumDate={new Date()}
+              minimumDate={new Date(1900, 0, 1)}
+            />
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity style={styles.dobDoneBtn} onPress={() => setShowDobPicker(false)}>
+                <Text style={styles.dobDoneText}>Done</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+      </View>
+
       <Button
         label={saving ? 'Saving…' : 'Get started'}
         onPress={handleGetStarted}
@@ -127,7 +183,7 @@ export default function OnboardingScreen() {
         style={[styles.cta, !canSubmit && styles.ctaDisabled]}
       />
       {!canSubmit && (
-        <Text style={styles.hint}>Answer both questions to continue.</Text>
+        <Text style={styles.hint}>Answer the first two questions to continue.</Text>
       )}
     </ScrollView>
   )
@@ -141,6 +197,7 @@ const styles = StyleSheet.create({
   subtitle: { ...typography.body, color: colors.textSecondary },
   section: { gap: spacing.sm, marginBottom: spacing.lg },
   question: { ...typography.h3, color: colors.textPrimary, marginBottom: spacing.xs },
+  optional: { ...typography.h3, color: colors.textMuted, fontWeight: '400' },
   optionCard: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
@@ -180,6 +237,35 @@ const styles = StyleSheet.create({
   optionLabel: { ...typography.body, fontWeight: '600', color: colors.textPrimary },
   optionLabelSelected: { color: colors.primary },
   optionDescription: { ...typography.bodySmall, color: colors.textSecondary },
+  dobHint: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  dobButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  dobButtonFilled: {
+    borderColor: colors.primary,
+    backgroundColor: '#EEF4FB',
+  },
+  dobButtonText: { ...typography.body, color: colors.textMuted },
+  dobButtonTextFilled: { color: colors.textPrimary },
+  dobClear: { ...typography.body, color: colors.textMuted, paddingLeft: spacing.sm },
+  dobDoneBtn: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  dobDoneText: { ...typography.body, color: colors.primary, fontWeight: '600' },
   cta: { marginTop: spacing.sm },
   ctaDisabled: { opacity: 0.4 },
   hint: { ...typography.caption, color: colors.textMuted, textAlign: 'center', marginTop: spacing.sm },

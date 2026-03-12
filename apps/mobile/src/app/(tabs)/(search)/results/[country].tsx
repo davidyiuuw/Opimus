@@ -7,7 +7,7 @@ import {
 import { useLocalSearchParams, useNavigation } from 'expo-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  VaccineRecommendation, VaccineGroup,
+  VaccineRecommendation, VaccineGroup, VaccineQuestion,
   TravelAdvisory, GroupedRecommendations, RecommendationLevel,
 } from '@opimus/types'
 import { supabase } from '../../../../lib/supabase'
@@ -35,18 +35,29 @@ async function fetchRecommendations(countryCode: string): Promise<GroupedRecomme
 
   if (countryError || !country) return { required: [], recommended: [], routine: [] }
 
-  const { data, error } = await supabase
-    .from('vaccine_recommendations')
-    .select(`
-      id, vaccine_id, level, notes, source, source_url, last_synced_at,
-      vaccines ( id, name, manufacturer, doses, notes,
-        diseases ( id, slug, name )
-      )
-    `)
-    .eq('country_id', country.id)
-    .neq('level', 'not_recommended')
+  const [{ data, error }, { data: questionsData }] = await Promise.all([
+    supabase
+      .from('vaccine_recommendations')
+      .select(`
+        id, vaccine_id, level, notes, source, source_url, last_synced_at,
+        vaccines ( id, name, manufacturer, doses, notes, min_age_years,
+          diseases ( id, slug, name )
+        )
+      `)
+      .eq('country_id', country.id)
+      .neq('level', 'not_recommended'),
+    supabase
+      .from('vaccine_questions')
+      .select('*')
+      .eq('country_id', country.id),
+  ])
 
   if (error) throw new Error(error.message)
+
+  const questionsByVaccine = new Map<number, VaccineQuestion>()
+  for (const q of questionsData ?? []) {
+    questionsByVaccine.set(q.vaccine_id, q as VaccineQuestion)
+  }
 
   const recs: VaccineRecommendation[] = (data ?? []).map((r: any) => ({
     id: r.id,
@@ -77,6 +88,7 @@ async function fetchRecommendations(countryCode: string): Promise<GroupedRecomme
       primaryLevel,
       sources,
       hasDiscrepancy: new Set(levels).size > 1,
+      question: questionsByVaccine.get(vaccine_id),
     }
   })
 
@@ -111,18 +123,28 @@ async function fetchCountryId(countryCode: string): Promise<number | null> {
   return data?.id ?? null
 }
 
-async function fetchPreferences(): Promise<{ detail_level: 'essential' | 'full' | null; risk_tolerance: 'all' | 'required_only' | null }> {
+async function fetchPreferences(): Promise<{ detail_level: 'essential' | 'full' | null; risk_tolerance: 'all' | 'required_only' | null; date_of_birth: string | null }> {
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { detail_level: null, risk_tolerance: null }
+  if (!user) return { detail_level: null, risk_tolerance: null, date_of_birth: null }
   const { data } = await supabase
     .from('users')
-    .select('detail_level, risk_tolerance')
+    .select('detail_level, risk_tolerance, date_of_birth')
     .eq('id', user.id)
     .single()
   return {
     detail_level: data?.detail_level ?? null,
     risk_tolerance: data?.risk_tolerance ?? null,
+    date_of_birth: data?.date_of_birth ?? null,
   }
+}
+
+function computeAge(dob: string): number {
+  const today = new Date()
+  const birth = new Date(dob)
+  let age = today.getFullYear() - birth.getFullYear()
+  const m = today.getMonth() - birth.getMonth()
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--
+  return age
 }
 
 async function fetchPassportIds(): Promise<{ vaccine_id: number; administered_at: string | null }[]> {
@@ -319,6 +341,7 @@ export default function ResultsScreen() {
 
   const showDetails = preferences?.detail_level !== 'essential'
   const hideRoutine = preferences?.risk_tolerance === 'required_only'
+  const userAge = preferences?.date_of_birth ? computeAge(preferences.date_of_birth) : null
 
   const sections = [
     { title: 'Required', data: grouped?.required ?? [] },
@@ -344,6 +367,7 @@ export default function ResultsScreen() {
             isOnChecklist={checklistVaccineIds.has(item.vaccine_id)}
             administeredAt={passportDates.get(item.vaccine_id) ?? null}
             showDetails={showDetails}
+            userAge={userAge}
             onAddToPassport={() => addPassportMutation.mutate(item.vaccine_id)}
             onAddToChecklist={() => {
               if (countryId) addChecklistMutation.mutate({ vaccineId: item.vaccine_id, countryId, entryDate: entryDate ?? undefined })
@@ -352,6 +376,13 @@ export default function ResultsScreen() {
             onReport={() => handleReport(item.vaccine_id)}
           />
         )}
+        ListFooterComponent={
+          <View style={styles.disclaimer}>
+            <Text style={styles.disclaimerText}>
+              Vaccine recommendations are curated by a community-practice pharmacist and tailored to your risk tolerance. They are based on CDC guidance and clinical judgment, and are not a substitute for personalized medical advice. Always consult your healthcare provider before travel.
+            </Text>
+          </View>
+        }
         ListEmptyComponent={
           countryId == null ? (
             <View style={styles.empty}>
@@ -393,4 +424,16 @@ const styles = StyleSheet.create({
   emptyTitle: { ...typography.h3, color: colors.textPrimary },
   emptyBody: { ...typography.body, color: colors.textSecondary },
   emptyLink: { ...typography.body, color: colors.primary, fontWeight: '600', marginTop: spacing.xs },
+  disclaimer: {
+    marginTop: spacing.xl,
+    marginHorizontal: spacing.md,
+    paddingBottom: spacing.xl,
+  },
+  disclaimerText: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    fontStyle: 'italic',
+  },
 })

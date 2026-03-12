@@ -4,6 +4,7 @@ export interface UserProfile {
   home_country: string // ISO 3166-1 alpha-2, default 'US'
   detail_level: 'essential' | 'full' | null
   risk_tolerance: 'all' | 'required_only' | null
+  date_of_birth: string | null  // ISO date YYYY-MM-DD
   created_at: string
   updated_at: string
 }

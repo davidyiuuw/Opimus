@@ -16,6 +16,8 @@ interface ChecklistVaccine {
   id: number
   vaccine_id: number
   vaccine_name: string
+  due_lead_days: number | null
+  best_lead_days: number | null
   created_at: string
 }
 
@@ -28,7 +30,6 @@ interface ChecklistTrip {
   vaccines: ChecklistVaccine[]
 }
 
-const DUE_LEAD_DAYS = 28 // 4 weeks before travel
 const NAV_BAR_HEIGHT = 56
 const INITIAL_SCROLL = { x: 0, y: NAV_BAR_HEIGHT }
 const WINDOW_HEIGHT = Dimensions.get('window').height
@@ -39,10 +40,19 @@ function formatDate(iso: string): string {
   })
 }
 
-function dueDate(entryDate: string): string {
+function dateMinusDays(entryDate: string, days: number): string {
   const d = new Date(entryDate)
-  d.setDate(d.getDate() - DUE_LEAD_DAYS)
+  d.setDate(d.getDate() - days)
   return formatDate(d.toISOString())
+}
+
+// Earliest due date across all vaccines that have due_lead_days set
+function earliestDueDate(vaccines: ChecklistVaccine[], entryDate: string): string | null {
+  const dates = vaccines
+    .filter((v) => v.due_lead_days != null)
+    .map((v) => { const d = new Date(entryDate); d.setDate(d.getDate() - v.due_lead_days!); return d })
+  if (dates.length === 0) return null
+  return formatDate(new Date(Math.min(...dates.map((d) => d.getTime()))).toISOString())
 }
 
 async function fetchChecklist(): Promise<ChecklistTrip[]> {
@@ -50,7 +60,7 @@ async function fetchChecklist(): Promise<ChecklistTrip[]> {
     .from('checklist_items')
     .select(`
       id, vaccine_id, country_id, created_at, entry_date,
-      vaccines ( id, name ),
+      vaccines ( id, name, due_lead_days, best_lead_days ),
       countries ( id, code, name )
     `)
     .order('created_at', { ascending: false })
@@ -80,6 +90,8 @@ async function fetchChecklist(): Promise<ChecklistTrip[]> {
       id: item.id,
       vaccine_id: item.vaccine_id,
       vaccine_name: vaccineInfo?.name ?? 'Unknown vaccine',
+      due_lead_days: vaccineInfo?.due_lead_days ?? null,
+      best_lead_days: vaccineInfo?.best_lead_days ?? null,
       created_at: item.created_at,
     })
     if (item.created_at > trip.lastAdded) trip.lastAdded = item.created_at
@@ -227,8 +239,9 @@ export default function ChecklistScreen() {
       const shareUrl = `https://opimus.app/share/${data.id}`
 
       const vaccineLines = trip.vaccines.map(v => `• ${v.vaccine_name}`).join('\n')
+      const earliest = trip.entry_date ? earliestDueDate(trip.vaccines, trip.entry_date) : null
       const dateLines = trip.entry_date
-        ? `📅 Travel date: ${formatDate(trip.entry_date)}\n⏰ Get vaccinated by: ${dueDate(trip.entry_date)}\n\n`
+        ? `📅 Travel date: ${formatDate(trip.entry_date)}${earliest ? `\n⏰ Get vaccinated by: ${earliest}` : ''}\n\n`
         : ''
 
       const message =
@@ -301,11 +314,12 @@ export default function ChecklistScreen() {
                         Last added: {formatDate(trip.lastAdded)}
                       </Text>
                     )}
-                    {trip.entry_date && (
-                      <Text style={styles.dueNotice}>
-                        Get vaccinated by {dueDate(trip.entry_date)}
-                      </Text>
-                    )}
+                    {trip.entry_date && (() => {
+                      const earliest = earliestDueDate(trip.vaccines, trip.entry_date)
+                      return earliest ? (
+                        <Text style={styles.dueNotice}>Get vaccinated by {earliest}</Text>
+                      ) : null
+                    })()}
                   </View>
                   <View style={styles.tripActions}>
                     <TouchableOpacity
@@ -339,9 +353,17 @@ export default function ChecklistScreen() {
                           <Text style={[styles.vaccineName, isChecked && styles.vaccineNameChecked]}>
                             {v.vaccine_name}
                           </Text>
-                          {trip.entry_date && !isChecked && (
-                            <Text style={styles.vaccineDue}>
-                              Due by {dueDate(trip.entry_date)}
+                          {trip.entry_date && !isChecked && (v.best_lead_days != null || v.due_lead_days != null) && (
+                            <Text>
+                              {v.best_lead_days != null && (
+                                <Text style={styles.vaccineBest}>Best by {dateMinusDays(trip.entry_date, v.best_lead_days)}</Text>
+                              )}
+                              {v.best_lead_days != null && v.due_lead_days != null && (
+                                <Text style={styles.vaccineDue}>, due by {dateMinusDays(trip.entry_date, v.due_lead_days)}</Text>
+                              )}
+                              {v.best_lead_days == null && v.due_lead_days != null && (
+                                <Text style={styles.vaccineDue}>Due by {dateMinusDays(trip.entry_date, v.due_lead_days)}</Text>
+                              )}
                             </Text>
                           )}
                         </View>
@@ -433,7 +455,8 @@ const styles = StyleSheet.create({
   vaccineInfo: { flex: 1, gap: 2 },
   vaccineName: { ...typography.body, color: colors.textPrimary },
   vaccineNameChecked: { textDecorationLine: 'line-through', color: colors.textSecondary },
-  vaccineDue: { ...typography.caption, color: colors.textMuted },
+  vaccineBest: { ...typography.caption, color: colors.secondary },
+  vaccineDue: { ...typography.caption, color: colors.warning },
   removeVaccine: { fontSize: 14, color: colors.textMuted, paddingHorizontal: 4 },
   empty: {
     alignItems: 'center',
