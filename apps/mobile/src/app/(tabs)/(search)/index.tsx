@@ -1,5 +1,5 @@
 import { SafeAreaView } from 'react-native-safe-area-context'
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import {
   View, Text, TextInput, FlatList, Modal, ScrollView,
   TouchableOpacity, TouchableWithoutFeedback,
@@ -19,6 +19,7 @@ import { typography } from '../../../theme/typography'
 import { borderRadius, spacing } from '../../../theme/spacing'
 
 const IDK_POPUP_KEY = 'idk_popup_count'
+const LAST_SEARCH_KEY = 'lastSearch'
 
 interface Country {
   id: number
@@ -68,6 +69,24 @@ export default function PlanScreen() {
   const [travelers, setTravelers] = useState<TravelerOption | null>(null)
   const [kids, setKids] = useState<Kid[]>([])
   const [dateUnknown, setDateUnknown] = useState(false)
+
+  // Restore last search on mount
+  useEffect(() => {
+    AsyncStorage.getItem(LAST_SEARCH_KEY).then((raw) => {
+      if (!raw) return
+      try {
+        const saved = JSON.parse(raw)
+        if (saved.country) setSelectedCountry(saved.country)
+        if (saved.entryDate) {
+          const d = new Date(saved.entryDate)
+          if (d > new Date()) setEntryDate(d)   // only restore future dates
+        }
+        if (saved.dateUnknown) setDateUnknown(true)
+        if (saved.travelers) setTravelers(saved.travelers)
+        if (saved.kids) setKids(saved.kids)
+      } catch {}
+    })
+  }, [])
 
   useFocusEffect(
     useCallback(() => {
@@ -147,10 +166,13 @@ export default function PlanScreen() {
 
   function handleSeeRequirements() {
     if (!selectedCountry) return
-    AsyncStorage.setItem(
-      'lastSearchedCountry',
-      JSON.stringify({ code: selectedCountry.code, name: selectedCountry.name }),
-    )
+    AsyncStorage.setItem(LAST_SEARCH_KEY, JSON.stringify({
+      country: selectedCountry,
+      entryDate: entryDate && !dateUnknown ? entryDate.toISOString() : null,
+      dateUnknown,
+      travelers,
+      kids,
+    }))
     const dateQuery = entryDate && !dateUnknown
       ? `?entryDate=${entryDate.toISOString().split('T')[0]}`
       : ''
@@ -416,6 +438,7 @@ export default function PlanScreen() {
             onChange={(_event, date) => { if (date) setPendingDate(date) }}
             style={styles.datePicker}
             accentColor={colors.primary}
+            themeVariant="light"
           />
         </View>
       </Modal>

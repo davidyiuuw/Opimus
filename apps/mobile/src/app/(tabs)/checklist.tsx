@@ -354,17 +354,18 @@ export default function ChecklistScreen() {
                             {v.vaccine_name}
                           </Text>
                           {trip.entry_date && !isChecked && (v.best_lead_days != null || v.due_lead_days != null) && (
-                            <Text>
+                            <View style={styles.datePillRow}>
                               {v.best_lead_days != null && (
-                                <Text style={styles.vaccineBest}>Best by {dateMinusDays(trip.entry_date, v.best_lead_days)}</Text>
+                                <View style={styles.bestPill}>
+                                  <Text style={styles.bestPillText}>Best by {dateMinusDays(trip.entry_date, v.best_lead_days)}</Text>
+                                </View>
                               )}
-                              {v.best_lead_days != null && v.due_lead_days != null && (
-                                <Text style={styles.vaccineDue}>, due by {dateMinusDays(trip.entry_date, v.due_lead_days)}</Text>
+                              {v.due_lead_days != null && (
+                                <View style={styles.duePill}>
+                                  <Text style={styles.duePillText}>Due by {dateMinusDays(trip.entry_date, v.due_lead_days)}</Text>
+                                </View>
                               )}
-                              {v.best_lead_days == null && v.due_lead_days != null && (
-                                <Text style={styles.vaccineDue}>Due by {dateMinusDays(trip.entry_date, v.due_lead_days)}</Text>
-                              )}
-                            </Text>
+                            </View>
                           )}
                         </View>
                         {!isChecked && (
@@ -455,8 +456,23 @@ const styles = StyleSheet.create({
   vaccineInfo: { flex: 1, gap: 2 },
   vaccineName: { ...typography.body, color: colors.textPrimary },
   vaccineNameChecked: { textDecorationLine: 'line-through', color: colors.textSecondary },
-  vaccineBest: { ...typography.caption, color: colors.secondary },
-  vaccineDue: { ...typography.caption, color: colors.warning },
+  datePillRow: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', marginTop: 2 },
+  bestPill: {
+    borderWidth: 1,
+    borderColor: colors.secondary,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  bestPillText: { ...typography.caption, color: colors.secondary },
+  duePill: {
+    borderWidth: 1,
+    borderColor: colors.warning,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  duePillText: { ...typography.caption, color: colors.warning },
   removeVaccine: { fontSize: 14, color: colors.textMuted, paddingHorizontal: 4 },
   empty: {
     alignItems: 'center',

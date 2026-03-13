@@ -10,7 +10,7 @@ import { TOP_40_COUNTRIES } from './countries'
 import {
   resolveCountryId,
   resolveVaccineId,
-  upsertVaccineRecommendation,
+  proposeVaccineRecommendation,
   deleteVaccineRecommendation,
   upsertTravelAdvisory,
 } from './db'
@@ -74,7 +74,7 @@ export async function runScrapeJob(): Promise<ScrapeJobResult> {
           continue
         }
 
-        await upsertVaccineRecommendation({
+        const result = await proposeVaccineRecommendation({
           country_id: countryId,
           vaccine_id: vaccineId,
           level: rec.level,
@@ -83,7 +83,7 @@ export async function runScrapeJob(): Promise<ScrapeJobResult> {
           source_url: rec.sourceUrl,
           last_synced_at: now,
         })
-        totalVaccines++
+        if (result === 'proposed') totalVaccines++
       }
     } catch (err) {
       logger.error('  CDC scrape error', { country: country.name, error: String(err) })

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { router } from 'expo-router'
 import { supabase } from '../lib/supabase'
+import { useIsAdmin } from '../hooks/useIsAdmin'
 import { colors } from '../theme/colors'
 import { typography } from '../theme/typography'
 import { borderRadius, spacing } from '../theme/spacing'
@@ -23,6 +24,7 @@ const ARROW_W = 9
 
 export function OpimusMenu({ tint = 'dark' }: OpimusMenuProps) {
   const [visible, setVisible] = useState(false)
+  const { isAdmin } = useIsAdmin()
 
   // Arrow-pill fill colour
   const fillColor = tint === 'light'
@@ -95,6 +97,17 @@ export function OpimusMenu({ tint = 'dark' }: OpimusMenuProps) {
               <Text style={styles.itemLabel}>Profile</Text>
               <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
             </TouchableOpacity>
+
+            {isAdmin && (
+              <>
+                <View style={styles.divider} />
+                <TouchableOpacity style={styles.item} onPress={() => go('/admin')}>
+                  <Ionicons name="shield-checkmark-outline" size={18} color={colors.primary} style={styles.icon} />
+                  <Text style={[styles.itemLabel, styles.itemAdmin]}>Admin Panel</Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+                </TouchableOpacity>
+              </>
+            )}
 
             <View style={styles.divider} />
 
@@ -170,6 +183,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flex: 1,
   },
+  itemAdmin: { color: colors.primary },
   itemLogout: { color: colors.error },
   divider: { height: 1, backgroundColor: colors.border },
 })

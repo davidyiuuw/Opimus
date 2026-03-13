@@ -209,7 +209,10 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       if (videoUrls.length > 0) playerFor(activeSlot.current).play()
-      return () => { playerA.pause(); playerB.pause() }
+      return () => {
+        try { playerA.pause() } catch {}
+        try { playerB.pause() } catch {}
+      }
     }, [videoUrls, playerA, playerB]), // eslint-disable-line
   )
 

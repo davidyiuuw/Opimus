@@ -110,6 +110,72 @@ export async function upsertVaccineRecommendation(row: VaccineRecommendationRow)
   }
 }
 
+// Compares scraped data against what's live and writes a proposal if anything changed.
+// If the data is identical, just bumps last_synced_at in place (no proposal needed).
+export async function proposeVaccineRecommendation(row: VaccineRecommendationRow): Promise<'proposed' | 'unchanged'> {
+  // Fetch current live record
+  const { data: current } = await supabase
+    .from('vaccine_recommendations')
+    .select('level, notes, source_url')
+    .match({ country_id: row.country_id, vaccine_id: row.vaccine_id, source: row.source })
+    .maybeSingle()
+
+  const isNew = !current
+  const changed = isNew
+    || current.level !== row.level
+    || current.notes !== row.notes
+    || current.source_url !== row.source_url
+
+  if (!changed) {
+    // Nothing meaningful changed — just update the sync timestamp silently
+    await supabase
+      .from('vaccine_recommendations')
+      .update({ last_synced_at: row.last_synced_at })
+      .match({ country_id: row.country_id, vaccine_id: row.vaccine_id, source: row.source })
+    return 'unchanged'
+  }
+
+  // Replace any existing pending proposal (delete + insert avoids partial-index upsert limitation)
+  await supabase
+    .from('scraper_proposals')
+    .delete()
+    .match({ country_id: row.country_id, vaccine_id: row.vaccine_id, source: row.source, status: 'pending' })
+
+  const { error } = await supabase
+    .from('scraper_proposals')
+    .insert({
+      country_id: row.country_id,
+      vaccine_id: row.vaccine_id,
+      source: row.source,
+      current_level:      isNew ? null : current.level,
+      current_notes:      isNew ? null : current.notes,
+      current_source_url: isNew ? null : current.source_url,
+      proposed_level:      row.level,
+      proposed_notes:      row.notes,
+      proposed_source_url: row.source_url,
+      is_new_entry: isNew,
+      status: 'pending',
+    })
+
+  if (error) {
+    logger.error('proposeVaccineRecommendation failed', {
+      country_id: row.country_id,
+      vaccine_id: row.vaccine_id,
+      source: row.source,
+      error: error.message,
+    })
+    throw error
+  }
+
+  logger.info('  Proposal created', {
+    country_id: row.country_id,
+    vaccine_id: row.vaccine_id,
+    source: row.source,
+    isNew,
+  })
+  return 'proposed'
+}
+
 export interface TravelAdvisoryRow {
   country_id: number
   level: AdvisoryLevel
